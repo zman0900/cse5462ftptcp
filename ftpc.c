@@ -13,7 +13,6 @@
 #include "common.h"
 
 #define BUF_SIZE 1000
-#define FNAME_LEN 20
 
 int sockfd;
 FILE *file;
@@ -96,16 +95,20 @@ void sendFile() {
 	int len, i;
 
 	// Send size
-	memcpy(&sendBuf, &netSize, 4);
+	memcpy(sendBuf, &netSize, 4);
 	for (i=0; i<4; ++i) {
 		printf("%02x", sendBuf[i]);
 	}
 	len = 4;
-	sendAll(sockfd, sendBuf, &len);
+	if (sendAll(sockfd, sendBuf, &len) != 0) {
+		exit(1);
+	}
 
-	// Send name
-	len = fileNameLen + 1;
-	sendAll(sockfd, fileName, &len);
+	// Send name in 20 bytes
+	memset(sendBuf, '\0', FNAME_LEN);  // Not really necessary...
+	memcpy(sendBuf, fileName, fileNameLen + 1);
+	len = FNAME_LEN;
+	sendAll(sockfd, sendBuf, &len);
 }
 
 int main(int argc, char *argv[]) {
