@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <errno.h>
+#include <libgen.h>
 #include <netdb.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -16,7 +17,7 @@
 
 int sockfd;
 FILE *file;
-char *fileName;
+char *fileName, *filePath;
 int fileNameLen;
 uint32_t fileSize;
 
@@ -72,7 +73,7 @@ void openFile() {
 		        FNAME_LEN);
 		exit(1);
 	}
-	if ((file = fopen(fileName, "rb")) == NULL) {
+	if ((file = fopen(filePath, "rb")) == NULL) {
 		perror("Couldn't open file");
 		exit(1);
 	}
@@ -137,7 +138,8 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-	fileName = argv[3];
+	fileName = basename(argv[3]);
+	filePath = argv[3];
 	openFile();
 	printf("Sending file %s of size %u bytes.\n", fileName, fileSize);
 
