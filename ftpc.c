@@ -92,23 +92,20 @@ void openFile() {
 void sendFile() {
 	char sendBuf[BUF_SIZE];
 	uint32_t netSize = htonl(fileSize);
-	int len, i;
+	int len;
 
 	// Send size
 	memcpy(sendBuf, &netSize, 4);
-	for (i=0; i<4; ++i) {
-		printf("%02x", sendBuf[i]);
-	}
 	len = 4;
-	if (sendAll(sockfd, sendBuf, &len) != 0) {
-		exit(1);
-	}
+	if (sendAll(sockfd, sendBuf, &len) != 0) exit(1);
 
 	// Send name in 20 bytes
 	memset(sendBuf, '\0', FNAME_LEN);  // Not really necessary...
 	memcpy(sendBuf, fileName, fileNameLen + 1);
 	len = FNAME_LEN;
-	sendAll(sockfd, sendBuf, &len);
+	if (sendAll(sockfd, sendBuf, &len) != 0) exit(1);
+
+	printf("Done\n");
 }
 
 int main(int argc, char *argv[]) {

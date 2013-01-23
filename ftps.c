@@ -1,9 +1,11 @@
+#include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -12,6 +14,39 @@
 #include "common.h"
 
 #define CONNECTION_QUEUE 5
+#define BUF_SIZE 1000
+#define OUTPUT_DIR "ftps-out"
+
+void receiveFile(int connfd) {
+	char recvBuf[BUF_SIZE];
+	int bytes;
+	uint32_t fileSize;
+	char *fileName;
+	FILE *file;
+
+	// Receive size
+	bytes = 4;
+	if (recvBytes(connfd, recvBuf, &bytes) != 0) exit(1);
+	memcpy(&fileSize, recvBuf, 4);
+	fileSize = ntohl(fileSize);
+
+	// Receive name
+	bytes = FNAME_LEN;
+	if (recvBytes(connfd, recvBuf, &bytes) != 0) exit(1);
+	fileName = malloc(strlen(recvBuf) + strlen(OUTPUT_DIR) + 2);
+	// Prepend directory name
+	strcpy(fileName, OUTPUT_DIR);
+	strcat(fileName, "/");
+	strcat(fileName, recvBuf);
+
+	printf("Receiving file '%s' of size %u\n", fileName, fileSize);
+
+	// Open file
+	if ((file = fopen(fileName, "wb")) == NULL) {
+		perror("Couldn't open file");
+		exit(1);
+	}
+}
 
 void sigchld_handler(int s) {
 	while(waitpid(-1, NULL, WNOHANG) > 0);
@@ -30,7 +65,16 @@ int main(int argc, char *argv[]) {
 	printf("Starting server...\n");
 	if (argc != 2) {
 		printf("Usage: %s <port>\n", argv[0]);
-		return -1;
+		return 1;
+	}
+
+	// Create output folder
+	if (mkdir(OUTPUT_DIR, S_IRWXU) == -1) {
+		int err = errno;
+		if (err != EEXIST) {
+			fprintf(stderr, "Error creating output directory: %s\n", strerror(err));
+			exit(1);
+		}
 	}
 
 	// Setup structures
@@ -110,17 +154,7 @@ int main(int argc, char *argv[]) {
 			printf("Hello from child\n");
 			// Close listener in child
 			close(sockfd);
-			// Test send and recv
-			if (send(connfd, "Hello, this is server!\n", 23, 0) == -1) {
-				perror("send");
-			}
-			char buf[100];
-			int numbytes;
-			if ((numbytes = recv(connfd, buf, 99, 0)) == -1) {
-				perror("recv");
-			}
-			buf[numbytes] = '\0';
-			printf("Received: '%s'\n", buf);
+			receiveFile(connfd);
 			exit(0);
 		} else {
 			// Parent process
