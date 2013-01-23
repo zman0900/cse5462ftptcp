@@ -92,7 +92,8 @@ void openFile() {
 void sendFile() {
 	char sendBuf[BUF_SIZE];
 	uint32_t netSize = htonl(fileSize);
-	int len, remaining;
+	int len;
+	uint32_t remaining;
 
 	// Send size
 	memcpy(sendBuf, &netSize, 4);

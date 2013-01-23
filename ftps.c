@@ -20,7 +20,7 @@
 void receiveFile(int connfd) {
 	char recvBuf[BUF_SIZE];
 	int bytes;
-	uint32_t fileSize;
+	uint32_t fileSize, remaining;
 	char *fileName;
 	FILE *file;
 
@@ -48,7 +48,7 @@ void receiveFile(int connfd) {
 	}
 
 	// Receive and write file
-	int remaining = fileSize;
+	remaining = fileSize;
 	while (remaining > 0) {
 		if ((bytes = recv(connfd, recvBuf,
 		             (remaining < BUF_SIZE) ? remaining : BUF_SIZE, 0)) == -1) {
