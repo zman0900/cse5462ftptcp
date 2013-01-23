@@ -110,6 +110,7 @@ void sendFile() {
 	while (remaining >= BUF_SIZE) {
 		if (fread(sendBuf, 1, BUF_SIZE, file) != BUF_SIZE) {
 			fprintf(stderr, "File read error!\n");
+			exit(1);
 		}
 		len = BUF_SIZE;
 		if (sendAll(sockfd, sendBuf, &len) != 0) exit(1);
@@ -124,6 +125,7 @@ void sendFile() {
 	if (sendAll(sockfd, sendBuf, &len) != 0) exit(1);
 	printf("Sent %d bytes...\n", len);
 
+	fclose(file);
 	printf("Done\n");
 }
 

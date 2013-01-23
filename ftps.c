@@ -46,6 +46,27 @@ void receiveFile(int connfd) {
 		perror("Couldn't open file");
 		exit(1);
 	}
+
+	// Receive and write file
+	int remaining = fileSize;
+	while (remaining > 0) {
+		if ((bytes = recv(connfd, recvBuf,
+		             (remaining < BUF_SIZE) ? remaining : BUF_SIZE, 0)) == -1) {
+			perror("recv");
+			exit(1);
+		}
+		printf("Received %d bytes...\n", bytes);
+		remaining -= bytes;
+		// Write to file
+		if (fwrite(recvBuf, 1, bytes, file) != bytes) {
+			fprintf(stderr, "File write error!\n");
+			exit(1);
+		}
+	}
+
+	fflush(file);
+	fclose(file);
+	printf("Done\n");
 }
 
 void sigchld_handler(int s) {
