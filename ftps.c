@@ -108,7 +108,19 @@ int main(int argc, char *argv[]) {
         } else if (pid == 0) {
             // Child process
             printf("Hello from child\n");
-            sleep(5);
+            // Close listener in child
+            close(sockfd);
+            // Test send and recv
+            if (send(connfd, "Hello, this is server!\n", 23, 0) == -1) {
+                perror("send");
+            }
+            char buf[100];
+            int numbytes;
+            if ((numbytes = recv(connfd, buf, 99, 0)) == -1) {
+                perror("recv");
+            }
+            buf[numbytes] = '\0';
+            printf("Received: '%s'\n", buf);
             exit(0);
         } else {
             // Parent process
