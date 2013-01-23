@@ -92,7 +92,7 @@ void openFile() {
 void sendFile() {
 	char sendBuf[BUF_SIZE];
 	uint32_t netSize = htonl(fileSize);
-	int len;
+	int len, remaining;
 
 	// Send size
 	memcpy(sendBuf, &netSize, 4);
@@ -104,6 +104,25 @@ void sendFile() {
 	memcpy(sendBuf, fileName, fileNameLen + 1);
 	len = FNAME_LEN;
 	if (sendAll(sockfd, sendBuf, &len) != 0) exit(1);
+
+	// Read and send file
+	remaining = fileSize;
+	while (remaining >= BUF_SIZE) {
+		if (fread(sendBuf, 1, BUF_SIZE, file) != BUF_SIZE) {
+			fprintf(stderr, "File read error!\n");
+		}
+		len = BUF_SIZE;
+		if (sendAll(sockfd, sendBuf, &len) != 0) exit(1);
+		remaining -= BUF_SIZE;
+		printf("Sent %d bytes...\n", len);
+	}
+	// Send any remaining less buffer size
+	if (fread(sendBuf, 1, remaining, file) != remaining) {
+		fprintf(stderr, "File read error!\n");
+	}
+	len = remaining;
+	if (sendAll(sockfd, sendBuf, &len) != 0) exit(1);
+	printf("Sent %d bytes...\n", len);
 
 	printf("Done\n");
 }
