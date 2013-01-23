@@ -1,8 +1,8 @@
 TARGET1 = ftps
-SRCS1 = ftps.c
+SRCS1 = ftps.c common.c
 
 TARGET2 = ftpc
-SRCS2 = ftpc.c
+SRCS2 = ftpc.c common.c
 
 OBJS1 = $(SRCS1:.c=.o)
 DEPS1 = $(SRCS1:.c=.d)
