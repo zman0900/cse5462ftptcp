@@ -1,4 +1,15 @@
 CSE 5462 Homework 1 Question 1
 Dan Ziemba
 
-Simple file transfer client and server using tcp sockets.
+Simple file transfer client and server using tcp sockets.  The server supports
+simultaneous connections provided each file being received has a different name.
+
+Build:
+Run make
+
+Run:
+	Server:
+	./ftps <port>
+
+	Client:
+	./ftpc <server-host> <server-port> <file-name>
