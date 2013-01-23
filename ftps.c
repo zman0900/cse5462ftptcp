@@ -55,6 +55,10 @@ void receiveFile(int connfd) {
 			perror("recv");
 			exit(1);
 		}
+		if (bytes == 0) {
+			fprintf(stderr, "Connection lost.\n");
+			exit(2);
+		}
 		printf("Received %d bytes...\n", bytes);
 		remaining -= bytes;
 		// Write to file

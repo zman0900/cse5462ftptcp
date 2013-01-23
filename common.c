@@ -54,6 +54,10 @@ int recvBytes(int sockfd, char *buf, int *b) {
 			perror("recv");
 			break;
 		}
+		if (n == 0) {
+			fprintf(stderr, "Connection lost.\n");
+			return -1;
+		}
 		total += n;
 		bytesleft -= n;
 	}
