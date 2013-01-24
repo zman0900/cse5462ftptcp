@@ -63,7 +63,6 @@ void receiveFile(int connfd) {
 			exit(2);
 		}
 		remaining -= bytes;
-		//printf("Received %.02f KB (+%d B)...\n", (fileSize-remaining)/1000.0, bytes);
 		// Display info only once per second
 		current = time(NULL);
 		if (current >= last + 1) {
@@ -92,7 +91,7 @@ void receiveFile(int connfd) {
 
 void sigchld_handler(int s) {
 	while(waitpid(-1, NULL, WNOHANG) > 0);
-	printf("Child died\n");
+	printf("Child finished.\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -104,11 +103,11 @@ int main(int argc, char *argv[]) {
 	socklen_t ca_size;
 	char addrString[INET6_ADDRSTRLEN];
 
-	printf("Starting server...\n");
 	if (argc != 2) {
 		printf("Usage: %s <port>\n", argv[0]);
 		return 1;
 	}
+	printf("Starting server on port %s...\n", argv[1]);
 
 	// Create output folder
 	if (mkdir(OUTPUT_DIR, S_IRWXU) == -1) {
@@ -164,7 +163,7 @@ int main(int argc, char *argv[]) {
 		perror("listen");
 		exit(1);
 	}
-	printf("Listening for connections...\n");
+	printf("Listening for connections...(Ctrl-C to stop)\n");
 
 	// Zombie hunting
 	sa.sa_handler = sigchld_handler;
@@ -193,7 +192,6 @@ int main(int argc, char *argv[]) {
 			exit(1);
 		} else if (pid == 0) {
 			// Child process
-			printf("Hello from child\n");
 			// Close listener in child
 			close(sockfd);
 			receiveFile(connfd);

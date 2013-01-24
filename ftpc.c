@@ -147,11 +147,11 @@ void sendFile() {
 }
 
 int main(int argc, char *argv[]) {
-	printf("Starting client...\n");
 	if (argc != 4) {
 		printf("Usage: %s <host> <port> <file>\n", argv[0]);
 		return 1;
 	}
+	printf("Starting client...\n");
 
 	fileName = basename(argv[3]);
 	filePath = argv[3];
