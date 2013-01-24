@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "common.h"
@@ -20,9 +21,10 @@
 void receiveFile(int connfd) {
 	char recvBuf[BUF_SIZE];
 	int bytes;
-	uint32_t fileSize, remaining;
+	uint32_t fileSize, remaining, remainLastUpdate;
 	char *fileName;
 	FILE *file;
+	time_t last, current, start;
 
 	// Receive size
 	bytes = 4;
@@ -48,7 +50,8 @@ void receiveFile(int connfd) {
 	}
 
 	// Receive and write file
-	remaining = fileSize;
+	remainLastUpdate = remaining = fileSize;
+	start = last = time(NULL);
 	while (remaining > 0) {
 		if ((bytes = recv(connfd, recvBuf,
 		             (remaining < BUF_SIZE) ? remaining : BUF_SIZE, 0)) == -1) {
@@ -59,14 +62,28 @@ void receiveFile(int connfd) {
 			fprintf(stderr, "Connection lost.\n");
 			exit(2);
 		}
-		printf("Received %d bytes...\n", bytes);
 		remaining -= bytes;
+		//printf("Received %.02f KB (+%d B)...\n", (fileSize-remaining)/1000.0, bytes);
+		// Display info only once per second
+		current = time(NULL);
+		if (current >= last + 1) {
+			printf("Received %.02f KB (%.02f KB/s)...\n",
+			       (fileSize-remainLastUpdate)/1000.0,
+			       ((remainLastUpdate-remaining)/1000.0)/difftime(current, last));
+			last = current;
+			remainLastUpdate = remaining;
+		}
 		// Write to file
 		if (fwrite(recvBuf, 1, bytes, file) != bytes) {
 			fprintf(stderr, "File write error!\n");
 			exit(1);
 		}
 	}
+
+	// Show stats
+	current = time(NULL);
+	printf("Received %.02f KB (average %.02f KB/s)...\n", fileSize/1000.0,
+	       (fileSize/1000.0)/difftime(current, start));
 
 	fflush(file);
 	fclose(file);

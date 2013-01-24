@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "common.h"
@@ -94,7 +95,8 @@ void sendFile() {
 	char sendBuf[BUF_SIZE];
 	uint32_t netSize = htonl(fileSize);
 	int len;
-	uint32_t remaining;
+	uint32_t remaining, remainLastUpdate;
+	time_t last, current, start;
 
 	// Send size
 	memcpy(sendBuf, &netSize, 4);
@@ -108,7 +110,8 @@ void sendFile() {
 	if (sendAll(sockfd, sendBuf, &len) != 0) exit(1);
 
 	// Read and send file
-	remaining = fileSize;
+	remainLastUpdate = remaining = fileSize;
+	start = last = time(NULL);
 	while (remaining >= BUF_SIZE) {
 		if (fread(sendBuf, 1, BUF_SIZE, file) != BUF_SIZE) {
 			fprintf(stderr, "File read error!\n");
@@ -117,7 +120,15 @@ void sendFile() {
 		len = BUF_SIZE;
 		if (sendAll(sockfd, sendBuf, &len) != 0) exit(1);
 		remaining -= BUF_SIZE;
-		printf("Sent %d bytes...\n", len);
+		// Display info only once per second
+		current = time(NULL);
+		if (current >= last + 1) {
+			printf("Sent %.02f KB (%.02f KB/s)...\n",
+			       (fileSize-remainLastUpdate)/1000.0,
+			       ((remainLastUpdate-remaining)/1000.0)/difftime(current, last));
+			last = current;
+			remainLastUpdate = remaining;
+		}
 	}
 	// Send any remaining less buffer size
 	if (fread(sendBuf, 1, remaining, file) != remaining) {
@@ -125,7 +136,11 @@ void sendFile() {
 	}
 	len = remaining;
 	if (sendAll(sockfd, sendBuf, &len) != 0) exit(1);
-	printf("Sent %d bytes...\n", len);
+
+	// Show stats
+	current = time(NULL);
+	printf("Sent %.02f KB (average %.02f KB/s)...\n", fileSize/1000.0,
+	       (fileSize/1000.0)/difftime(current, start));
 
 	fclose(file);
 	printf("Done\n");
