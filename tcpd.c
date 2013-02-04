@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -45,7 +46,9 @@ char *remote_host;
 int isClientSide;
 int troll_pid = -1;
 int sockclient, socktroll, socklisten;
-char recvBuf[MSS];
+struct addrinfo *trolladdr;
+char recvBuf[MSS], sendBuf[MSS];
+int sendBufSize;
 char addrString[INET6_ADDRSTRLEN];
 
 // Functions
@@ -61,6 +64,7 @@ void preExit();
 int randomPort();
 void recvClientMsg();
 void recvTcpMsg();
+void sendToTroll();
 
 int main(int argc, char *argv[]) {
 	if (argc < 3 || argc > 4) {
@@ -117,28 +121,18 @@ int main(int argc, char *argv[]) {
 		forkTroll();
 	}
 
+	// Set up some address info
+	char tp[6];
+	sprintf(tp, "%d", trollport);
+	if (fillServInfo("localhost", tp, &trolladdr) < 0) {
+		preExit();
+		exit(1);
+	}
+
 	// Bind ports
 	bindClient();
 	bindListen();
 	bindTroll();
-
-	// Test send to troll
-	if (isClientSide) {
-		struct addrinfo *servinfo;
-		char tp[6];
-		sprintf(tp, "%d", trollport);
-		if (fillServInfo("localhost", tp, &servinfo) < 0) {
-			preExit();
-			exit(1);
-		}
-		if (sendto(socktroll, "test", 5, 0, servinfo->ai_addr,
-		           servinfo->ai_addrlen) < 0) {
-			perror("tcpd: sendto");
-			preExit();
-			exit(1);
-		}
-	}
-	// End test
 
 	// Start listening to client and listen ports
 	listenToPorts();
@@ -259,6 +253,7 @@ void listenToPorts() {
 		if (FD_ISSET(sockclient, &readfds)) {
 			// Msg from client
 			printf("tcpd: select got msg from client\n");
+			recvClientMsg();
 		}
 
 		if (FD_ISSET(socklisten, &readfds)) {
@@ -290,8 +285,37 @@ int randomPort() {
 }
 
 void recvClientMsg() {
-	// Wrap with tcp, send to other tcpd through troll
+	int bytes;
+	struct sockaddr_in senderaddr;
+	socklen_t saddr_sz = sizeof senderaddr;
+	if ((bytes = recvfrom(sockclient, recvBuf, MSS, 0,
+	                      (struct sockaddr *)&senderaddr, &saddr_sz)) < 0) {
+		perror("tcpd: recvfrom");
+		preExit();
+		exit(1);
+	}
+	getInAddrString(senderaddr.sin_family, (struct sockaddr *)&senderaddr,
+			addrString, sizeof addrString);
+	printf("Received \"%s\" (%d bytes) from %s port %hu\n", recvBuf, bytes,
+	        addrString, senderaddr.sin_port);
 
+	// Ensure there is room in MSS size for tcp header
+	// TODO: remove this when client programs complete
+	if (bytes > MSS - TCP_HEADER_SIZE) {
+		fprintf(stderr,
+		        "tcpd: Dropping packet from client for size violation!\n");
+		return;
+	}
+
+	// Wrap with tcp
+	Header *h = createTcpHeader(0, 0, 0, 0, 0, 0); // TODO: fill in properly
+	memcpy(sendBuf, h, TCP_HEADER_SIZE);
+	free(h);
+	memcpy(sendBuf+TCP_HEADER_SIZE, recvBuf, bytes);
+	sendBufSize = TCP_HEADER_SIZE + bytes;
+
+	// Send to other tcpd through troll
+	sendToTroll();
 }
 
 void recvTcpMsg() {
@@ -309,5 +333,23 @@ void recvTcpMsg() {
 	printf("Received \"%s\" (%d bytes) from %s port %hu\n", recvBuf, bytes,
 	        addrString, senderaddr.sin_port);
 
-	// Unwrap tcp, send data to client
+	// Unwrap tcp
+	Header *h = (Header *)recvBuf;
+	char *data = recvBuf+TCP_HEADER_SIZE;
+	printf("source port: %u\n", ntohs(h->field.sport));
+	printf("destination port: %u\n", ntohs(h->field.dport));
+	printf("data: \"%s\"\n", data);
+
+	// Send data to client
+
+}
+
+// Expects sendBuf and sendBufSize to be prefilled
+void sendToTroll() {
+	if (sendto(socktroll, sendBuf, sendBufSize, 0, trolladdr->ai_addr,
+		           trolladdr->ai_addrlen) < 0) {
+		perror("tcpd: sendto");
+		preExit();
+		exit(1);
+	}
 }
