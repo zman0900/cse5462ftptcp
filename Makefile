@@ -5,7 +5,7 @@ TARGET2 = ftpc
 SRCS2 = ftpc.c common.c
 
 TARGET3 = tcpd
-SRCS3 = tcpd.c
+SRCS3 = tcpd.c common.c
 
 OBJS1 = $(SRCS1:.c=.o)
 DEPS1 = $(SRCS1:.c=.d)
