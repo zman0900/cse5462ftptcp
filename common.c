@@ -81,10 +81,6 @@ int fillServInfo(char *host, char *port, struct addrinfo **servinfo) {
 	return 0;
 }
 
-/*
- * Calls send repeatedly until len bytes have been sent from buf, or returns -1
- * on failure and sets len to number of bytes sent.
- */
 int sendAll(int sockfd, char *buf, int *len) {
 	int total = 0;
 	int bytesleft = *len;
@@ -106,10 +102,6 @@ int sendAll(int sockfd, char *buf, int *len) {
 	return n == -1 ? -1 : 0;
 }
 
-/*
- * Calls recv repeatedly until b bytes have been received, or returns -1 on
- * failure and sets b to number of bytes received.
- */
 int recvBytes(int sockfd, char *buf, int *b) {
 	int total = 0;
 	int bytesleft = *b;
