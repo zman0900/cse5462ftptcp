@@ -4,15 +4,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "common.h"
 
-#define HEADER_SIZE 32
-
 // Tcp header with tcp timestamps option
+#pragma pack(1)  // Not portable, but makes this union work, and this is easier
 typedef union _header {
 	struct _field {
 		uint16_t sport;
@@ -27,10 +27,10 @@ typedef union _header {
 		uint8_t tsopt_kind;
 		uint8_t tsopt_len;
 		uint32_t tsval;
-		uint32_t tsecr;		// TODO: Why is this getting rearranged!!!?!?!
+		uint32_t tsecr;
 		uint16_t pad;
 	} field;
-	unsigned char packed[HEADER_SIZE];
+	unsigned char packed[TCP_HEADER_SIZE];
 } Header;
 
 // Ports
@@ -52,9 +52,10 @@ char addrString[INET6_ADDRSTRLEN];
 void bindClient();
 void bindListen();
 void bindTroll();
-Header* fillTcpHeader(uint32_t seqnum, uint32_t acknum, int isSyn, int isAck,
-                      int isFin, uint32_t tsecr);
+Header* createTcpHeader(uint32_t seqnum, uint32_t acknum, int isSyn, int isAck,
+                        int isFin, uint32_t tsecr);
 void forkTroll();
+uint32_t getTimestamp();  // Timestamp in microseconds
 void listenToPorts();
 void preExit();
 int randomPort();
@@ -182,10 +183,11 @@ void bindTroll() {
 	}
 }
 
-Header* fillTcpHeader(uint32_t seqnum, uint32_t acknum, int isSyn, int isAck,
+Header* createTcpHeader(uint32_t seqnum, uint32_t acknum, int isSyn, int isAck,
                       int isFin, uint32_t tsecr) {
-	Header *h = malloc(HEADER_SIZE);
-	h->field.sport = htons(listenport);  // Use this so other side knows where to send
+	Header *h = malloc(TCP_HEADER_SIZE);
+
+	h->field.sport = htons(listenport);  // Tells other side where to send
 	h->field.dport = htons(rmttrollport);
 	h->field.seqnum = htonl(seqnum);
 	h->field.acknum = htonl(acknum);
@@ -200,14 +202,9 @@ Header* fillTcpHeader(uint32_t seqnum, uint32_t acknum, int isSyn, int isAck,
 	h->field.urgptr = 0;
 	h->field.tsopt_kind = 8;
 	h->field.tsopt_len = 10;
-	h->field.tsval = htonl(0xffffffff); // TODO: Set to timestamp
+	h->field.tsval = htonl(getTimestamp());
 	h->field.tsecr = htonl(tsecr);
 	h->field.pad = 0;
-
-	int i;
-	for (i = 0; i < HEADER_SIZE; i++) {
-		printf("%02x\n", h->packed[i]);
-	}
 
 	return h;
 }
@@ -234,6 +231,12 @@ void forkTroll() {
 		sleep(1);  // Make sure troll is ready
 		printf("tcpd: Started troll (pid %d)\n", troll_pid);
 	}
+}
+
+uint32_t getTimestamp() {
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
 void listenToPorts() {
