@@ -47,7 +47,7 @@ int isClientSide;
 int troll_pid = -1;
 int sockclient, socktroll, socklisten;
 struct addrinfo *trolladdr;
-char recvBuf[MSS], sendBuf[MSS];
+char recvBuf[TCP_HEADER_SIZE+MSS], sendBuf[TCP_HEADER_SIZE+MSS];
 int sendBufSize;
 char addrString[INET6_ADDRSTRLEN];
 
@@ -299,14 +299,6 @@ void recvClientMsg() {
 	printf("Received \"%s\" (%d bytes) from %s port %hu\n", recvBuf, bytes,
 	        addrString, senderaddr.sin_port);
 
-	// Ensure there is room in MSS size for tcp header
-	// TODO: remove this when client programs complete
-	if (bytes > MSS - TCP_HEADER_SIZE) {
-		fprintf(stderr,
-		        "tcpd: Dropping packet from client for size violation!\n");
-		return;
-	}
-
 	// Wrap with tcp
 	Header *h = createTcpHeader(0, 0, 0, 0, 0, 0); // TODO: fill in properly
 	memcpy(sendBuf, h, TCP_HEADER_SIZE);
@@ -322,7 +314,7 @@ void recvTcpMsg() {
 	int bytes;
 	struct sockaddr_in senderaddr;
 	socklen_t saddr_sz = sizeof senderaddr;
-	if ((bytes = recvfrom(socklisten, recvBuf, MSS, 0,
+	if ((bytes = recvfrom(socklisten, recvBuf, TCP_HEADER_SIZE + MSS, 0,
 	                      (struct sockaddr *)&senderaddr, &saddr_sz)) < 0) {
 		perror("tcpd: recvfrom");
 		preExit();
