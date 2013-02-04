@@ -7,11 +7,12 @@
 #include <unistd.h>
 
 // Ports
-int clientport;		// Listen to connections from local ftps/ftpc
-int listenport;		// Listen for connections from other troll
-int trollport;		// Port our troll is listening on
-int localtrollport;	// Port we use to send to troll
-int rmttrollport;		// Port troll uses to send to other tcpd
+int clientport;     // Listen to connections from local ftps/ftpc
+int listenport;     // Listen for connections from other troll
+int trollport;      // Port our troll is listening on
+int localtrollport; // Port we use to send to troll
+int rmttrollport;   // Port troll uses to send to other tcpd
+char *remote_host;
 
 // Globals
 int troll_pid = -1;
@@ -30,7 +31,7 @@ int main(int argc, char *argv[]) {
 		printf("connection from remote\ntroll.\n");
 		return 1;
 	}
-	printf("Starting tcpd...\n");
+	printf("tcpd: Starting...\n");
 
 	clientport = atoi(argv[1]);
 
@@ -42,11 +43,13 @@ int main(int argc, char *argv[]) {
 		// Troll's remote port will be set later from tcp packet source field
 		listenport = atoi(argv[2]);
 		rmttrollport = -1;
+		remote_host = NULL;  // Also set later
 	} else {
 		// Client side
 		// Listen on random port, put that in tcp source field
 		// Troll's remote port will be "remote-port"
 		rmttrollport = atoi(argv[2]);
+		remote_host = argv[3];
 		do {
 			listenport = randomPort();
 		} while(listenport == rmttrollport || listenport == clientport);
@@ -61,7 +64,7 @@ int main(int argc, char *argv[]) {
 	} while (localtrollport == trollport || localtrollport == listenport
 	         || localtrollport == rmttrollport || localtrollport == clientport);
 
-	printf("Ports:\n\tclient\t%d\n\tlisten\t%d\n\ttroll\t%d\n\tltroll\t%d\n\trtroll\t%d\n",
+	printf("tcpd: Ports:\n\tclient\t%d\n\tlisten\t%d\n\ttroll\t%d\n\tltroll\t%d\n\trtroll\t%d\n",
 	       clientport, listenport, trollport, localtrollport, rmttrollport);
 
 	// If client side, fork troll now, otherwise do it later
@@ -78,18 +81,25 @@ int main(int argc, char *argv[]) {
 }
 
 void forkTroll() {
+	// Convert ports to strings
+	char tp[6], rtp[6], ltp[6];
+	sprintf(tp, "%d", trollport);
+	sprintf(rtp, "%d", rmttrollport);
+	sprintf(ltp, "%d", localtrollport);
+
 	if ((troll_pid = vfork()) < 0) {
-		perror("vfork");
+		perror("tcpd: vfork");
 		exit(1);
 	} else if (troll_pid == 0) {
 		// Child
-		execl("./troll", "troll", "-S", "localhost", "-a", "1234", "-C", "localhost", "-b", "1235", "1236", (char *)NULL);
+		execl("./troll", "troll", "-S", "localhost", "-a", ltp, "-C",
+		      remote_host, "-b", rtp, tp, (char *)NULL);
 		// Only returns on error
-		perror("execl");
+		perror("tcpd: execl");
 		exit(1);
 	} else {
 		// Parent
-		printf("Started troll (pid %d)\n", troll_pid);
+		printf("tcpd: Started troll (pid %d)\n", troll_pid);
 	}
 }
 
