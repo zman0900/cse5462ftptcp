@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 
 #define FNAME_LEN 20
+#define MSS 1000 //bytes
 
 /*
  * Returns bound socket, or negative on fail
