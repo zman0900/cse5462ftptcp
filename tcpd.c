@@ -10,6 +10,29 @@
 
 #include "common.h"
 
+#define HEADER_SIZE 32
+
+// Tcp header with tcp timestamps option
+typedef union _header {
+	struct _field {
+		uint16_t sport;
+		uint16_t dport;
+		uint32_t seqnum;
+		uint32_t acknum;
+		uint8_t doffset_ns;
+		uint8_t flags;
+		uint16_t winsize;
+		uint16_t checksum;
+		uint16_t urgptr;
+		uint8_t tsopt_kind;
+		uint8_t tsopt_len;
+		uint32_t tsval;
+		uint32_t tsecr;		// TODO: Why is this getting rearranged!!!?!?!
+		uint16_t pad;
+	} field;
+	unsigned char packed[HEADER_SIZE];
+} Header;
+
 // Ports
 int clientport;     // Listen to connections from local ftps/ftpc
 int listenport;     // Listen for connections from other troll
@@ -29,6 +52,8 @@ char addrString[INET6_ADDRSTRLEN];
 void bindClient();
 void bindListen();
 void bindTroll();
+Header* fillTcpHeader(uint32_t seqnum, uint32_t acknum, int isSyn, int isAck,
+                      int isFin, uint32_t tsecr);
 void forkTroll();
 void listenToPorts();
 void preExit();
@@ -157,6 +182,36 @@ void bindTroll() {
 	}
 }
 
+Header* fillTcpHeader(uint32_t seqnum, uint32_t acknum, int isSyn, int isAck,
+                      int isFin, uint32_t tsecr) {
+	Header *h = malloc(HEADER_SIZE);
+	h->field.sport = htons(listenport);  // Use this so other side knows where to send
+	h->field.dport = htons(rmttrollport);
+	h->field.seqnum = htonl(seqnum);
+	h->field.acknum = htonl(acknum);
+	h->field.doffset_ns = 0;  // No hton needed for single bytes
+	h->field.doffset_ns |= (8 << 4);
+	h->field.flags = 0;  // No hton needed for single bytes
+	if (isAck) h->field.flags |= (1 << 4);
+	if (isSyn) h->field.flags |= (1 << 1);
+	if (isFin) h->field.flags |= 1;
+	h->field.winsize = htons(WINSIZE * MSS);
+	h->field.checksum = 0;
+	h->field.urgptr = 0;
+	h->field.tsopt_kind = 8;
+	h->field.tsopt_len = 10;
+	h->field.tsval = htonl(0xffffffff); // TODO: Set to timestamp
+	h->field.tsecr = htonl(tsecr);
+	h->field.pad = 0;
+
+	int i;
+	for (i = 0; i < HEADER_SIZE; i++) {
+		printf("%02x\n", h->packed[i]);
+	}
+
+	return h;
+}
+
 void forkTroll() {
 	// Convert ports to strings
 	char tp[6], rtp[6], ltp[6];
@@ -232,6 +287,7 @@ int randomPort() {
 }
 
 void recvClientMsg() {
+	// Wrap with tcp, send to other tcpd through troll
 
 }
 
@@ -249,4 +305,6 @@ void recvTcpMsg() {
 			addrString, sizeof addrString);
 	printf("Received \"%s\" (%d bytes) from %s port %hu\n", recvBuf, bytes,
 	        addrString, senderaddr.sin_port);
+
+	// Unwrap tcp, send data to client
 }

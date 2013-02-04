@@ -6,6 +6,7 @@
 
 #define FNAME_LEN 20
 #define MSS 1000 //bytes
+#define WINSIZE 20 //mss
 
 /*
  * Returns bound socket, or negative on fail
