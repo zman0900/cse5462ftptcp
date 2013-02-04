@@ -1,24 +1,26 @@
+#include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/types.h>
 #include <time.h>
+#include <unistd.h>
 
-int randCalled = 0;
-int randomPort() {
-	if (!randCalled) {
-		// Initialize rand
-		srand(time(NULL));
-		randCalled = 1;
-	}
-	return rand() % 64512 + 1024;
-}
+// Ports
+int clientport;		// Listen to connections from local ftps/ftpc
+int listenport;		// Listen for connections from other troll
+int trollport;		// Port our troll is listening on
+int localtrollport;	// Port we use to send to troll
+int rmttrollport;		// Port troll uses to send to other tcpd
+
+// Globals
+int troll_pid = -1;
+
+// Functions
+void forkTroll();
+int randomPort();
 
 int main(int argc, char *argv[]) {
-	int clientport;		// Listen to connections from local ftps/ftpc
-	int listenport;		// Listen for connections from other troll
-	int trollport;		// Port our troll is listening on
-	int localtrollport;	// Port we use to send to troll
-	int rmttrollport;		// Port troll uses to send to other tcpd
-
 	if (argc < 3 || argc > 4) {
 		printf("Usage: %s <local-port> <remote-port> [<remote-host>]\n\n",
 		       argv[0]);
@@ -62,5 +64,41 @@ int main(int argc, char *argv[]) {
 	printf("Ports:\n\tclient\t%d\n\tlisten\t%d\n\ttroll\t%d\n\tltroll\t%d\n\trtroll\t%d\n",
 	       clientport, listenport, trollport, localtrollport, rmttrollport);
 
+	// If client side, fork troll now, otherwise do it later
+	if (argc == 4) {
+		forkTroll();
+	}
+
+	// Kill troll before exiting
+	if (troll_pid > 0) {
+		kill(troll_pid, SIGINT);
+	}
+
 	return 0;
+}
+
+void forkTroll() {
+	if ((troll_pid = vfork()) < 0) {
+		perror("vfork");
+		exit(1);
+	} else if (troll_pid == 0) {
+		// Child
+		execl("./troll", "troll", "-S", "localhost", "-a", "1234", "-C", "localhost", "-b", "1235", "1236", (char *)NULL);
+		// Only returns on error
+		perror("execl");
+		exit(1);
+	} else {
+		// Parent
+		printf("Started troll (pid %d)\n", troll_pid);
+	}
+}
+
+int randCalled = 0;
+int randomPort() {
+	if (!randCalled) {
+		// Initialize rand
+		srand(time(NULL));
+		randCalled = 1;
+	}
+	return rand() % 64512 + 1024;
 }
