@@ -38,6 +38,7 @@ void bindClient();
 void bindListen();
 void bindTroll();
 void forkTroll();
+void killTroll();
 void listenToPorts();
 void preExit();
 int randomPort();
@@ -180,6 +181,15 @@ void forkTroll() {
 	}
 }
 
+void killTroll() {
+	if (troll_pid > 0) {
+		// Try not to kill troll if its still working
+		sleep(1);
+		kill(troll_pid, SIGINT);
+		troll_pid = -1;
+	}
+}
+
 void listenToPorts() {
 	fd_set readfds;
 
@@ -213,12 +223,7 @@ void listenToPorts() {
 
 void preExit() {
 	// Kill troll before exiting
-	if (troll_pid > 0) {
-		// Try not to kill troll if its still working
-		sleep(1);
-		kill(troll_pid, SIGINT);
-		troll_pid = -1;
-	}
+	killTroll();
 }
 
 int randCalled = 0;
@@ -241,10 +246,7 @@ void recvClientMsg() {
 		preExit();
 		exit(1);
 	}
-	getInAddrString(senderaddr.sin_family, (struct sockaddr *)&senderaddr,
-			addrString, sizeof addrString);
-	printf("Received \"%s\" (%d bytes) from %s port %hu\n", recvBuf, bytes,
-	        addrString, senderaddr.sin_port);
+	printf("tcpd: ClientMsg: Received %d bytes\n", bytes);
 
 	// Wrap with tcp
 	Header *h = tcpheader_create(listenport, rmttrollport, 0, 0, 0, 0, 0, 0); // TODO: fill in properly
@@ -267,17 +269,41 @@ void recvTcpMsg() {
 		preExit();
 		exit(1);
 	}
-	getInAddrString(senderaddr.sin_family, (struct sockaddr *)&senderaddr,
-			addrString, sizeof addrString);
-	printf("Received \"%s\" (%d bytes) from %s port %hu\n", recvBuf, bytes,
-	        addrString, senderaddr.sin_port);
+	printf("tcpd: TcpMsg: Received %d bytes\n", bytes);
 
 	// Unwrap tcp
 	Header *h = (Header *)recvBuf;
 	char *data = recvBuf+TCP_HEADER_SIZE;
-	printf("source port: %u\n", ntohs(h->field.sport));
-	printf("destination port: %u\n", ntohs(h->field.dport));
-	printf("data: \"%s\"\n", data);
+
+	// If this is a new connection
+	if (!tcp_isConn) {
+		// Figure out where to send replys to if server side and start troll
+		if (!isClientSide) {
+			// Set up some address info
+			getInAddrString(senderaddr.sin_family,
+			                (struct sockaddr *)&senderaddr, addrString,
+			                sizeof addrString);
+			// Fill in missing fields
+			rmttrollport = ntohs(h->field.sport);
+			remote_host = malloc(INET6_ADDRSTRLEN);
+			strcpy(remote_host, addrString);
+			//forkTroll();  // Not for HW2
+			printf("tcpd: New connection open from %s, reply port %d\n",
+			        remote_host, rmttrollport);
+		}
+		tcp_isConn = 1;
+	}
+
+	// Since this is only one-way for HW2, just close connection on FIN
+	if (tcpheader_isfin(h)) {
+		printf("tcpd: Got FIN packet\n");
+		tcp_isConn = 0;
+		if (!isClientSide) {
+			free(remote_host);
+			rmttrollport = -1;
+			killTroll();
+		}
+	}
 
 	// Send data to client
 
