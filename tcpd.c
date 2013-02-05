@@ -15,17 +15,16 @@
 
 // Ports
 int clientport;     // Port local ftps/ftpc uses
-int localclientport;// Listen to connections from local ftps/ftpc
+int localport;      // Listen to connections from local ftps/ftpc, send to troll
 int listenport;     // Listen for connections from other troll
 int trollport;      // Port our troll is listening on
-int localtrollport; // Port we use to send to troll
 int rmttrollport;   // Port troll sends to on other tcpd
 char *remote_host;
 
 // Globals
 int isClientSide;
 int troll_pid = -1;
-int sockclient, socktroll, socklisten;
+int socklocal, socklisten;
 struct addrinfo *trolladdr, *clientaddr;
 char recvBuf[TCP_HEADER_SIZE+MSS], sendBuf[TCP_HEADER_SIZE+MSS];
 int sendBufSize;
@@ -35,9 +34,8 @@ char addrString[INET6_ADDRSTRLEN];
 int tcp_isConn = 0;
 
 // Functions
-void bindClient();
+void bindLocal();
 void bindListen();
-void bindTroll();
 void forkTroll();
 void killTroll();
 void listenToPorts();
@@ -61,10 +59,10 @@ int main(int argc, char *argv[]) {
 	printf("tcpd: Starting...\n");
 
 	clientport = atoi(argv[1]);
-	localclientport = atoi(argv[2]);
+	localport = atoi(argv[2]);
 
-	// For either client or server side, trollport and localtrollport can be
-	// random since not used elsewhere
+	// For either client or server side, trollport can be random since not used
+	// elsewhere
 	if (argc == 4) {
 		// Server side
 		isClientSide = 0;
@@ -83,26 +81,19 @@ int main(int argc, char *argv[]) {
 		remote_host = argv[4];
 		do {
 			listenport = randomPort();
-		} while(listenport == rmttrollport || listenport == localclientport
+		} while(listenport == rmttrollport || listenport == localport
 		        || listenport == clientport);
 	}
 	// Generate trollport without collsion
 	do {
 		trollport = randomPort();
 	} while (trollport == listenport || trollport == rmttrollport
-	         || trollport == localclientport || trollport == clientport);
-	// Generate localtrollport without collsion
-	do {
-		localtrollport = randomPort();
-	} while (localtrollport == trollport || localtrollport == listenport
-	         || localtrollport == rmttrollport || localtrollport == clientport
-	         || localtrollport == localclientport);
+	         || trollport == localport || trollport == clientport);
 
 	// Print selected ports
 	printf("tcpd: Ports:\n\tclient\t%d\n\tlocal\t%d\n\tlisten\t%d\n\ttroll\t%d\
-\n\tltroll\t%d\n\trtroll\t%d\n",
-	       clientport, localclientport, listenport, trollport, localtrollport,
-	       rmttrollport);
+\n\trtroll\t%d\n",
+	       clientport, localport, listenport, trollport, rmttrollport);
 
 	// If client side, fork troll now, otherwise do it later
 	if (isClientSide) {
@@ -123,9 +114,8 @@ int main(int argc, char *argv[]) {
 	}
 
 	// Bind ports
-	bindClient();
+	bindLocal();
 	bindListen();
-	bindTroll();
 
 	// Start listening to client and listen ports
 	listenToPorts();
@@ -134,13 +124,13 @@ int main(int argc, char *argv[]) {
 	return 0;
 }
 
-void bindClient() {
+void bindLocal() {
 	// Port to string
 	char cp[6];
-	sprintf(cp, "%d", localclientport);
+	sprintf(cp, "%d", localport);
 
-	sockclient = bindUdpSocket(NULL, cp);
-	if (sockclient <= 0) {
+	socklocal = bindUdpSocket(NULL, cp);
+	if (socklocal <= 0) {
 		preExit();
 		exit(1);
 	}
@@ -158,24 +148,12 @@ void bindListen() {
 	}
 }
 
-void bindTroll() {
-	// Port to string
-	char tp[6];
-	sprintf(tp, "%d", localtrollport);
-
-	socktroll = bindUdpSocket(NULL, tp);
-	if (socktroll <= 0) {
-		preExit();
-		exit(1);
-	}
-}
-
 void forkTroll() {
 	// Convert ports to strings
 	char tp[6], rtp[6], ltp[6];
 	sprintf(tp, "%d", trollport);
 	sprintf(rtp, "%d", rmttrollport);
-	sprintf(ltp, "%d", localtrollport);
+	sprintf(ltp, "%d", localport);
 
 	if ((troll_pid = vfork()) < 0) {
 		perror("tcpd: vfork");
@@ -210,7 +188,7 @@ void listenToPorts() {
 
 	while (1) {
 		FD_ZERO(&readfds);
-		FD_SET(sockclient, &readfds);
+		FD_SET(socklocal, &readfds);
 		FD_SET(socklisten, &readfds);
 
 		// Block until input on a socket
@@ -220,7 +198,7 @@ void listenToPorts() {
 			exit(1);
 		}
 
-		if (FD_ISSET(sockclient, &readfds)) {
+		if (FD_ISSET(socklocal, &readfds)) {
 			// Msg from client
 			printf("tcpd: select got msg from client\n");
 			recvClientMsg();
@@ -253,7 +231,7 @@ void recvClientMsg() {
 	int bytes;
 	struct sockaddr_in senderaddr;
 	socklen_t saddr_sz = sizeof senderaddr;
-	if ((bytes = recvfrom(sockclient, recvBuf, MSS, 0,
+	if ((bytes = recvfrom(socklocal, recvBuf, MSS, 0,
 	                      (struct sockaddr *)&senderaddr, &saddr_sz)) < 0) {
 		perror("tcpd: recvfrom");
 		preExit();
@@ -326,7 +304,7 @@ void recvTcpMsg() {
 
 // Expects sendBuf and sendBufSize to be prefilled
 void sendToClient() {
-	if (sendto(sockclient, sendBuf, sendBufSize, 0, clientaddr->ai_addr,
+	if (sendto(socklocal, sendBuf, sendBufSize, 0, clientaddr->ai_addr,
 		           clientaddr->ai_addrlen) < 0) {
 		perror("tcpd: sendto");
 		preExit();
@@ -337,7 +315,7 @@ void sendToClient() {
 
 // Expects sendBuf and sendBufSize to be prefilled
 void sendToTroll() {
-	if (sendto(socktroll, sendBuf, sendBufSize, 0, trolladdr->ai_addr,
+	if (sendto(socklocal, sendBuf, sendBufSize, 0, trolladdr->ai_addr,
 		           trolladdr->ai_addrlen) < 0) {
 		perror("tcpd: sendto");
 		preExit();
