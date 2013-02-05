@@ -25,7 +25,7 @@ char *remote_host;
 int isClientSide;
 int troll_pid = -1;
 int sockclient, socktroll, socklisten;
-struct addrinfo *trolladdr;
+struct addrinfo *trolladdr, *clientaddr;
 char recvBuf[TCP_HEADER_SIZE+MSS], sendBuf[TCP_HEADER_SIZE+MSS];
 int sendBufSize;
 char addrString[INET6_ADDRSTRLEN];
@@ -44,6 +44,7 @@ void preExit();
 int randomPort();
 void recvClientMsg();
 void recvTcpMsg();
+void sendToClient();
 void sendToTroll();
 
 int main(int argc, char *argv[]) {
@@ -102,9 +103,14 @@ int main(int argc, char *argv[]) {
 	}
 
 	// Set up some address info
-	char tp[6];
+	char tp[6], cp[6];
 	sprintf(tp, "%d", trollport);
+	sprintf(cp, "%d", clientport);
 	if (fillServInfo("localhost", tp, &trolladdr) < 0) {
+		preExit();
+		exit(1);
+	}
+	if (fillServInfo("localhost", cp, &clientaddr) < 0) {
 		preExit();
 		exit(1);
 	}
@@ -306,7 +312,19 @@ void recvTcpMsg() {
 	}
 
 	// Send data to client
+	memcpy(sendBuf, data, bytes);
+	sendBufSize = bytes;
+	sendToClient();
+}
 
+// Expects sendBuf and sendBufSize to be prefilled
+void sendToClient() {
+	if (sendto(sockclient, sendBuf, sendBufSize, 0, clientaddr->ai_addr,
+		           clientaddr->ai_addrlen) < 0) {
+		perror("tcpd: sendto");
+		preExit();
+		exit(1);
+	}
 }
 
 // Expects sendBuf and sendBufSize to be prefilled
