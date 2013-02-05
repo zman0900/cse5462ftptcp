@@ -27,12 +27,6 @@ int bindUdpSocket(char *host, char *port) {
 			perror("socket");
 			continue;
 		}
-		// Let other sockets bind port unless active listening socket
-		if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes,
-		     sizeof(int)) == -1) {
-			perror("setsockopt");
-			return -1;
-		}
 		// Bind socket
 		if (bind(sock, p->ai_addr, p->ai_addrlen) == -1) {
 			perror("bind");
