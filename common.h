@@ -33,7 +33,14 @@ int fillServInfo(char *host, char *port, struct addrinfo **servinfo);
  * Calls send repeatedly until len bytes have been sent from buf, or returns -1
  * on failure and sets len to number of bytes sent.
  */
-int sendAll(int sockfd, char *buf, int *len);
+int sendAll(int sockfd, const void *buf, int *len);
+
+/*
+ * Calls sendto repeatedly until len bytes have been sent from buf, or returns
+ * -1 on failure and sets len to number of bytes sent.
+ */
+int sendAllTo(int sockfd, const void *buf, int *len,
+              const struct sockaddr *dest_addr, socklen_t dest_len);
 
 /*
  * Calls recv repeatedly until b bytes have been received, or returns -1 on

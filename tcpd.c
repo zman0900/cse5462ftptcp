@@ -304,7 +304,7 @@ void recvTcpMsg() {
 
 // Expects sendBuf and sendBufSize to be prefilled
 void sendToClient() {
-	if (sendto(socklocal, sendBuf, sendBufSize, 0, clientaddr->ai_addr,
+	if (sendAllTo(socklocal, sendBuf, &sendBufSize, clientaddr->ai_addr,
 		           clientaddr->ai_addrlen) < 0) {
 		perror("tcpd: sendto");
 		preExit();
@@ -315,7 +315,7 @@ void sendToClient() {
 
 // Expects sendBuf and sendBufSize to be prefilled
 void sendToTroll() {
-	if (sendto(socklocal, sendBuf, sendBufSize, 0, trolladdr->ai_addr,
+	if (sendAllTo(socklocal, sendBuf, &sendBufSize, trolladdr->ai_addr,
 		           trolladdr->ai_addrlen) < 0) {
 		perror("tcpd: sendto");
 		preExit();

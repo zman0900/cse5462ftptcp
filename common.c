@@ -13,7 +13,7 @@
 
 int bindUdpSocket(char *host, char *port) {
 	struct addrinfo *servinfo, *p;
-	int yes=1, sock;
+	int sock;
 
 	// Setup structures
 	if (fillServInfo(host, port, &servinfo) < 0) {
@@ -82,13 +82,36 @@ int fillServInfo(char *host, char *port, struct addrinfo **servinfo) {
 	return 0;
 }
 
-int sendAll(int sockfd, char *buf, int *len) {
+int sendAll(int sockfd, const void *buf, int *len) {
 	int total = 0;
 	int bytesleft = *len;
 	int n;
 
 	while (total < *len) {
 		if ((n = send(sockfd, buf+total, bytesleft, 0)) == -1) {
+			perror("send");
+			break;
+		}
+		total += n;
+		bytesleft -= n;
+	}
+
+	// Pass back actual amount sent
+	*len = total;
+
+	// -1 for fail, 0 success
+	return n == -1 ? -1 : 0;
+}
+
+int sendAllTo(int sockfd, const void *buf, int *len,
+              const struct sockaddr *dest_addr, socklen_t dest_len) {
+	int total = 0;
+	int bytesleft = *len;
+	int n;
+
+	while (total < *len) {
+		if ((n = sendto(sockfd, buf+total, bytesleft, 0, dest_addr,
+		                dest_len)) == -1) {
 			perror("send");
 			break;
 		}
