@@ -14,7 +14,8 @@
 #include "tcpheader.h"
 
 // Ports
-int clientport;     // Listen to connections from local ftps/ftpc
+int clientport;     // Port local ftps/ftpc uses
+int localclientport;// Listen to connections from local ftps/ftpc
 int listenport;     // Listen for connections from other troll
 int trollport;      // Port our troll is listening on
 int localtrollport; // Port we use to send to troll
@@ -48,9 +49,9 @@ void sendToClient();
 void sendToTroll();
 
 int main(int argc, char *argv[]) {
-	if (argc < 3 || argc > 4) {
-		printf("Usage: %s <local-port> <remote-port> [<remote-host>]\n\n",
-		       argv[0]);
+	if (argc < 4 || argc > 5) {
+		printf("Usage: %s <client-port> <local-port> <remote-port> ", argv[0]);
+		printf("[<remote-host>]\n\n");
 		printf("If remote-host is specified, will start troll and attempt ");
 		printf("connection to tcpd\nlistening on remote-host:remote-port.\n");
 		printf("Without remote-host, will listen on remote-port for ");
@@ -60,14 +61,15 @@ int main(int argc, char *argv[]) {
 	printf("tcpd: Starting...\n");
 
 	clientport = atoi(argv[1]);
+	localclientport = atoi(argv[2]);
 
 	// For either client or server side, trollport and localtrollport can be
 	// random since not used elsewhere
-	if (argc == 3) {
+	if (argc == 4) {
 		// Server side
 		isClientSide = 0;
 		// Listen on "remote-port"
-		listenport = atoi(argv[2]);
+		listenport = atoi(argv[3]);
 		// Troll's remote port and host will be set later after receiving first
 		// connection (should be other tcpd's host and listenport)
 		rmttrollport = -1;
@@ -77,27 +79,30 @@ int main(int argc, char *argv[]) {
 		isClientSide = 1;
 		// Listen on random port, put that in tcp source field
 		// Troll's remote port will be "remote-port"
-		rmttrollport = atoi(argv[2]);
-		remote_host = argv[3];
+		rmttrollport = atoi(argv[3]);
+		remote_host = argv[4];
 		do {
 			listenport = randomPort();
-		} while(listenport == rmttrollport || listenport == clientport);
+		} while(listenport == rmttrollport || listenport == localclientport
+		        || listenport == clientport);
 	}
-	// Generate trollport
+	// Generate trollport without collsion
 	do {
 		trollport = randomPort();
 	} while (trollport == listenport || trollport == rmttrollport
-	         || trollport == clientport);
-	// Generate localtrollport
+	         || trollport == localclientport || trollport == clientport);
+	// Generate localtrollport without collsion
 	do {
 		localtrollport = randomPort();
 	} while (localtrollport == trollport || localtrollport == listenport
-	         || localtrollport == rmttrollport || localtrollport == clientport);
+	         || localtrollport == rmttrollport || localtrollport == clientport
+	         || localtrollport == localclientport);
 
 	// Print selected ports
-	printf("tcpd: Ports:\n\tclient\t%d\n\tlisten\t%d\n\ttroll\t%d\n\tltroll\
-\t%d\n\trtroll\t%d\n",
-	       clientport, listenport, trollport, localtrollport, rmttrollport);
+	printf("tcpd: Ports:\n\tclient\t%d\n\tlocal\t%d\n\tlisten\t%d\n\ttroll\t%d\
+\n\tltroll\t%d\n\trtroll\t%d\n",
+	       clientport, localclientport, listenport, trollport, localtrollport,
+	       rmttrollport);
 
 	// If client side, fork troll now, otherwise do it later
 	if (isClientSide) {
@@ -132,7 +137,7 @@ int main(int argc, char *argv[]) {
 void bindClient() {
 	// Port to string
 	char cp[6];
-	sprintf(cp, "%d", clientport);
+	sprintf(cp, "%d", localclientport);
 
 	sockclient = bindUdpSocket(NULL, cp);
 	if (sockclient <= 0) {
