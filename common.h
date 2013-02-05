@@ -3,11 +3,11 @@
 
 #include <netdb.h>
 #include <netinet/in.h>
+#include <stdint.h>
 
 #define FNAME_LEN 20
 #define MSS 1000 //bytes
 #define WINSIZE 20 //mss
-#define TCP_HEADER_SIZE 32
 
 /*
  * Returns bound socket, or negative on fail
@@ -18,6 +18,11 @@ int bindUdpSocket(char *host, char *port);
  * Gets incoming address string and puts it in dst, size is length of dst
  */
 void getInAddrString(int af, struct sockaddr *sa, char *dst, socklen_t size);
+
+/*
+ * Returns 32bit timestamp in microseconds, expect overflow
+ */
+uint32_t getTimestamp();
 
 /*
  * Fills servinfo, or returns negative on fail

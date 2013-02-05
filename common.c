@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -61,6 +62,12 @@ void getInAddrString(int af, struct sockaddr *sa, char *dst, socklen_t size) {
 		src = &(((struct sockaddr_in6*)sa)->sin6_addr);
 	}
 	inet_ntop(af, src, dst, size);
+}
+
+uint32_t getTimestamp() {
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
 int fillServInfo(char *host, char *port, struct addrinfo **servinfo) {

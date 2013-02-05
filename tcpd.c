@@ -1,3 +1,4 @@
+#include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
 #include <signal.h>
@@ -5,34 +6,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "common.h"
-
-// Tcp header with tcp timestamps option
-#pragma pack(1)  // Not portable, but makes this union work, and this is easier
-typedef union _header {
-	struct _field {
-		uint16_t sport;
-		uint16_t dport;
-		uint32_t seqnum;
-		uint32_t acknum;
-		uint8_t doffset_ns;
-		uint8_t flags;
-		uint16_t winsize;
-		uint16_t checksum;
-		uint16_t urgptr;
-		uint8_t tsopt_kind;
-		uint8_t tsopt_len;
-		uint32_t tsval;
-		uint32_t tsecr;
-		uint16_t pad;
-	} field;
-	unsigned char packed[TCP_HEADER_SIZE];
-} Header;
+#include "tcpheader.h"
 
 // Ports
 int clientport;     // Listen to connections from local ftps/ftpc
@@ -51,14 +30,14 @@ char recvBuf[TCP_HEADER_SIZE+MSS], sendBuf[TCP_HEADER_SIZE+MSS];
 int sendBufSize;
 char addrString[INET6_ADDRSTRLEN];
 
+// TCP State
+int tcp_isConn = 0;
+
 // Functions
 void bindClient();
 void bindListen();
 void bindTroll();
-Header* createTcpHeader(uint32_t seqnum, uint32_t acknum, int isSyn, int isAck,
-                        int isFin, uint32_t tsecr);
 void forkTroll();
-uint32_t getTimestamp();  // Timestamp in microseconds
 void listenToPorts();
 void preExit();
 int randomPort();
@@ -177,32 +156,6 @@ void bindTroll() {
 	}
 }
 
-Header* createTcpHeader(uint32_t seqnum, uint32_t acknum, int isSyn, int isAck,
-                      int isFin, uint32_t tsecr) {
-	Header *h = malloc(TCP_HEADER_SIZE);
-
-	h->field.sport = htons(listenport);  // Tells other side where to send
-	h->field.dport = htons(rmttrollport);
-	h->field.seqnum = htonl(seqnum);
-	h->field.acknum = htonl(acknum);
-	h->field.doffset_ns = 0;  // No hton needed for single bytes
-	h->field.doffset_ns |= (8 << 4);
-	h->field.flags = 0;  // No hton needed for single bytes
-	if (isAck) h->field.flags |= (1 << 4);
-	if (isSyn) h->field.flags |= (1 << 1);
-	if (isFin) h->field.flags |= 1;
-	h->field.winsize = htons(WINSIZE * MSS);
-	h->field.checksum = 0;
-	h->field.urgptr = 0;
-	h->field.tsopt_kind = 8;
-	h->field.tsopt_len = 10;
-	h->field.tsval = htonl(getTimestamp());
-	h->field.tsecr = htonl(tsecr);
-	h->field.pad = 0;
-
-	return h;
-}
-
 void forkTroll() {
 	// Convert ports to strings
 	char tp[6], rtp[6], ltp[6];
@@ -225,12 +178,6 @@ void forkTroll() {
 		sleep(1);  // Make sure troll is ready
 		printf("tcpd: Started troll (pid %d)\n", troll_pid);
 	}
-}
-
-uint32_t getTimestamp() {
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	return tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
 void listenToPorts() {
@@ -300,7 +247,7 @@ void recvClientMsg() {
 	        addrString, senderaddr.sin_port);
 
 	// Wrap with tcp
-	Header *h = createTcpHeader(0, 0, 0, 0, 0, 0); // TODO: fill in properly
+	Header *h = tcpheader_create(listenport, rmttrollport, 0, 0, 0, 0, 0, 0); // TODO: fill in properly
 	memcpy(sendBuf, h, TCP_HEADER_SIZE);
 	free(h);
 	memcpy(sendBuf+TCP_HEADER_SIZE, recvBuf, bytes);
