@@ -83,22 +83,24 @@ int main(int argc, char *argv[]) {
 			listenport = randomPort();
 		} while(listenport == rmttrollport || listenport == clientport);
 	}
-	// Generate trollport and localtrollport
+	// Generate trollport
 	do {
 		trollport = randomPort();
 	} while (trollport == listenport || trollport == rmttrollport
 	         || trollport == clientport);
+	// Generate localtrollport
 	do {
 		localtrollport = randomPort();
 	} while (localtrollport == trollport || localtrollport == listenport
 	         || localtrollport == rmttrollport || localtrollport == clientport);
 
+	// Print selected ports
 	printf("tcpd: Ports:\n\tclient\t%d\n\tlisten\t%d\n\ttroll\t%d\n\tltroll\
 \t%d\n\trtroll\t%d\n",
 	       clientport, listenport, trollport, localtrollport, rmttrollport);
 
 	// If client side, fork troll now, otherwise do it later
-	if (argc == 4) {
+	if (isClientSide) {
 		forkTroll();
 	}
 
