@@ -312,8 +312,8 @@ void recvTcpMsg() {
 	}
 
 	// Send data to client
-	memcpy(sendBuf, data, bytes);
-	sendBufSize = bytes;
+	sendBufSize = bytes - TCP_HEADER_SIZE;
+	memcpy(sendBuf, data, sendBufSize);
 	sendToClient();
 }
 
@@ -325,6 +325,7 @@ void sendToClient() {
 		preExit();
 		exit(1);
 	}
+	printf("tcpd: ClientMsg: Sent %d bytes\n", sendBufSize);
 }
 
 // Expects sendBuf and sendBufSize to be prefilled
@@ -335,4 +336,5 @@ void sendToTroll() {
 		preExit();
 		exit(1);
 	}
+	printf("tcpd: TcpMsg: Sent %d bytes\n", sendBufSize);
 }
