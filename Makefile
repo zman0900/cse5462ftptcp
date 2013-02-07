@@ -1,8 +1,8 @@
 TARGET1 = ftps
-SRCS1 = ftps.c common.c
+SRCS1 = ftps.c common.c tcpd_interface.c
 
 TARGET2 = ftpc
-SRCS2 = ftpc.c common.c
+SRCS2 = ftpc.c common.c tcpd_interface.c
 
 TARGET3 = tcpd
 SRCS3 = tcpd.c common.c tcpheader.c
