@@ -138,28 +138,3 @@ int randomPort() {
 	return rand() % 64512 + 1024;
 }
 
-int recvBytes(int sockfd, char *buf, int *b) {
-	int total = 0;
-	int bytesleft = *b;
-	int n;
-	
-	while (total < *b) {
-		if ((n = recv(sockfd, buf+total, bytesleft, 0)) == -1) {
-			perror("recv");
-			break;
-		}
-		if (n == 0) {
-			fprintf(stderr, "Connection lost.\n");
-			return -1;
-		}
-		total += n;
-		bytesleft -= n;
-	}
-	
-	// Pass back actual amount received
-	*b = total;
-	
-	// -1 for fail, 0 for success
-	return n == -1 ? -1 : 0;
-}
-

@@ -161,7 +161,7 @@ ssize_t SEND(int sockfd, const void *buf, size_t len, int flags) {
 		return -1;
 	}
 
-	printf("tcpd_interface: Sent %d bytes\n", len);
+	printf("tcpd_interface: Sent %d bytes\n", (int)len);
 
 	// TODO: remove this (for project)
 	sleep(0.01);
@@ -170,7 +170,23 @@ ssize_t SEND(int sockfd, const void *buf, size_t len, int flags) {
 }
 
 ssize_t RECV(int sockfd, void *buf, size_t len, int flags) {
-	return -666;
+	// Get socket info
+	if (sockfd > num_sockets || sockets[sockfd] == NULL) {
+		// Socket not open
+		fprintf(stderr, "tcpd_interface: attempt to recv from non-open socket\n");
+		return -1;
+	}
+	sockinfo *si = sockets[sockfd];
+
+	int bytes;
+	if ((bytes = recvfrom(sockfd, buf, len, 0, si->tcpdaddr->ai_addr,
+	                      &(si->tcpdaddr->ai_addrlen))) < 0) {
+		perror("tcpd_interface: RECV");
+		return -1;
+	}
+	printf("tcpd: ClientMsg: Received %d bytes\n", bytes);
+
+	return bytes;
 }
 
 int CLOSE(int fd) {
@@ -185,4 +201,29 @@ int CLOSE(int fd) {
 		fprintf(stderr, "tcpd_interface: attempt to close non-open socket\n");
 		return close(fd);
 	}
+}
+
+int recvBytes(int sockfd, char *buf, int *b) {
+	int total = 0;
+	int bytesleft = *b;
+	int n;
+
+	while (total < *b) {
+		if ((n = RECV(sockfd, buf+total, bytesleft, 0)) == -1) {
+			perror("recv");
+			break;
+		}
+		if (n == 0) {
+			fprintf(stderr, "Connection lost.\n");
+			return -1;
+		}
+		total += n;
+		bytesleft -= n;
+	}
+
+	// Pass back actual amount received
+	*b = total;
+
+	// -1 for fail, 0 for success
+	return n == -1 ? -1 : 0;
 }

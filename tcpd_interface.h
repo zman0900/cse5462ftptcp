@@ -12,4 +12,10 @@ ssize_t SEND(int sockfd, const void *buf, size_t len, int flags);
 ssize_t RECV(int sockfd, void *buf, size_t len, int flags);
 int CLOSE(int fd);
 
+/*
+ * Calls RECV repeatedly until b bytes have been received, or returns -1 on
+ * failure and sets b to number of bytes received.
+ */
+int recvBytes(int sockfd, char *buf, int *b);
+
 #endif

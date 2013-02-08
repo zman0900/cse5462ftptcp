@@ -47,10 +47,4 @@ int sendAllTo(int sockfd, const void *buf, int *len,
  */
 int randomPort();
 
-/*
- * Calls recv repeatedly until b bytes have been received, or returns -1 on
- * failure and sets b to number of bytes received.
- */
-int recvBytes(int sockfd, char *buf, int *b);
-
 #endif
