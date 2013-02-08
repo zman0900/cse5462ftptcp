@@ -131,6 +131,7 @@ void bindLocal() {
 	socklocal = bindUdpSocket(NULL, cp);
 	if (socklocal <= 0) {
 		preExit();
+		fprintf(stderr, "tcpd: bind local port failed\n");
 		exit(1);
 	}
 }
@@ -143,6 +144,7 @@ void bindListen() {
 	socklisten = bindUdpSocket(NULL, lp);
 	if (socklisten <= 0) {
 		preExit();
+		fprintf(stderr, "tcpd: bind listen port failed\n");
 		exit(1);
 	}
 }

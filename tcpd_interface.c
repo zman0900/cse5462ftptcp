@@ -38,8 +38,11 @@ pid_t forkTcpd(int clientport, int localport, int remoteport, char *host) {
 		exit(1);
 	} else if (tcpd_pid == 0) {
 		// Child
-		execl("./tcpd", "tcpd", clientport, localport, remoteport, host, 
+		execl("./tcpd", "tcpd", cp, lp, rp, host, 
 		      (char *)NULL);
+		// Only returns on error
+		perror("tcpd_interface: execl");
+		exit(1);
 	} else {
 		// Parent
 		printf("tcpd_interface: Started tcpd (pid %d)\n", tcpd_pid);
@@ -64,13 +67,13 @@ int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 	si->addr = addr;
 	si->addrlen = addrlen;
 	// Choose ports for tcpd communication
-	int remoteport = ntohs(((struct sockaddr_in *)&addr)->sin_port);
+	int remoteport = ntohs(((struct sockaddr_in *)addr)->sin_port);
 	do {
 		si->localport = randomPort();
-	} while (remoteport != si->localport);
+	} while (remoteport == si->localport);
 	do {
 		si->tcpdport = randomPort();
-	} while (remoteport != si->tcpdport && si->localport != si->tcpdport);
+	} while (remoteport == si->tcpdport || si->localport == si->tcpdport);
 
 	// Bind socket for communication with tcpd
 	char lp[6];
@@ -78,10 +81,12 @@ int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 	int socket = bindUdpSocket(NULL, lp);
 
 	// Get remote address
-	getInAddrString(addr->sa_family, (struct sockaddr *)&addr, addrString,
+	getInAddrString(addr->sa_family, (struct sockaddr *)addr, addrString,
 	                sizeof addrString);
 
 	// Fork tcpd using provided info
+	printf("tcpd_interface: Ports:\n\tlocal\t%d\n\ttcpd\t%d\n\tremote\t%d\n",
+	       si->localport, si->tcpdport, remoteport);
 	si->tcpd_pid = forkTcpd(si->localport, si->tcpdport, remoteport, addrString);
 
 	// Store in hash table for other functions
