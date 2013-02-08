@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -164,7 +165,10 @@ ssize_t SEND(int sockfd, const void *buf, size_t len, int flags) {
 	printf("tcpd_interface: Sent %d bytes\n", (int)len);
 
 	// TODO: remove this (for project)
-	sleep(0.01);
+	struct timeval tv;
+	tv.tv_sec = 0;
+	tv.tv_usec = 50000;
+	select(0, NULL, NULL, NULL, &tv);
 
 	return len;
 }
