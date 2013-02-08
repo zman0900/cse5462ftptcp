@@ -1,6 +1,6 @@
 #include <arpa/inet.h>
 #include <errno.h>
-#include <glib.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
@@ -10,9 +10,6 @@
 #include "common.h"
 #include "tcpd_interface.h"
 
-GHashTable *sockets = NULL;
-char addrString[INET6_ADDRSTRLEN];
-
 typedef struct _sockinfo {
 	const struct sockaddr *addr;
 	socklen_t addrlen;
@@ -21,9 +18,9 @@ typedef struct _sockinfo {
 	pid_t tcpd_pid;
 } sockinfo;
 
-void initHashTable() {
-	sockets = g_hash_table_new(g_int_hash, g_int_equal);
-}
+char addrString[INET6_ADDRSTRLEN];
+sockinfo **sockets;
+int num_sockets = -1;
 
 pid_t forkTcpd(int clientport, int localport, int remoteport, char *host) {
 	// Convert ports to strings
@@ -45,9 +42,14 @@ pid_t forkTcpd(int clientport, int localport, int remoteport, char *host) {
 		exit(1);
 	} else {
 		// Parent
+		sleep(1); // give it time to start
 		printf("tcpd_interface: Started tcpd (pid %d)\n", tcpd_pid);
 	}
 	return tcpd_pid;
+}
+
+void killTcpd(pid_t tcpd_pid) {
+	kill(tcpd_pid, SIGINT);
 }
 
 //// PUBLIC FUNCTIONS ////
@@ -58,8 +60,18 @@ int SOCKET(int domain, int type, int protocol) {
 }
 
 int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
-	if (sockets == NULL) {
-		initHashTable();
+	struct addrinfo *servinfo, *p;
+
+	if (num_sockets < sockfd) {
+		// Increase array size (waste of memory, but o well)
+		sockinfo **more_sockets;
+		more_sockets = realloc(sockets, sockfd+1 * sizeof(sockinfo *));
+		if (more_sockets == NULL) {
+			printf("tcdp_interface: error allocating memory\n");
+			return -1;
+		}
+		sockets = more_sockets;
+		num_sockets = sockfd;
 	}
 
 	// Store provided info for later
@@ -78,7 +90,28 @@ int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 	// Bind socket for communication with tcpd
 	char lp[6];
 	sprintf(lp, "%d", si->localport);
-	int socket = bindUdpSocket(NULL, lp);
+	//sockfd = bindUdpSocket(NULL, lp);
+	if (fillServInfo(NULL, lp, &servinfo) < 0) {
+		return -1;
+	}
+	for (p = servinfo; p != NULL; p = p->ai_next) {
+		if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+			perror("tcpd_interface: bind");
+			close(sockfd);
+			continue;
+		}
+		// Socket bound
+		break;
+	}
+
+	// Make sure socket is bound
+	if (p == NULL)  {
+		fprintf(stderr, "tcpd_interface: Failed to bind to an address.\n");
+		return -1;
+	}
+
+	// Clean up
+	freeaddrinfo(servinfo);
 
 	// Get remote address
 	getInAddrString(addr->sa_family, (struct sockaddr *)addr, addrString,
@@ -89,10 +122,9 @@ int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 	       si->localport, si->tcpdport, remoteport);
 	si->tcpd_pid = forkTcpd(si->localport, si->tcpdport, remoteport, addrString);
 
-	// Store in hash table for other functions
-	g_hash_table_replace(sockets, &socket, si);
-
-	return socket;
+	// Store in array for other functions
+	sockets[sockfd] = si;
+	return 0;
 }
 
 int ACCEPT(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
@@ -112,5 +144,15 @@ ssize_t RECV(int sockfd, void *buf, size_t len, int flags) {
 }
 
 int CLOSE(int fd) {
-	return -666;
+	// Get data
+	if (fd <= num_sockets && sockets[fd] != NULL) {
+		sockinfo *si = sockets[fd];
+		// Kill children
+		killTcpd(si->tcpd_pid);
+		return close(fd);
+	} else {
+		// Socket not open
+		fprintf(stderr, "tcpd_interface: attempt to close non-open socket\n");
+		return close(fd);
+	}
 }

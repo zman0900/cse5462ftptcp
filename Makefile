@@ -16,8 +16,8 @@ DEPS3 = $(SRCS3:.c=.d)
 
 CPP = gcc -I/usr/include/glib-2.0
 DEBUG = -ggdb
-CPPFLAGS = -Wall $(DEBUG) `pkg-config --cflags glib-2.0`
-LFLAGS = `pkg-config --libs glib-2.0`
+CPPFLAGS = -Wall $(DEBUG)
+LFLAGS = 
 
 .PHONY: clean all
 
