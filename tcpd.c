@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
+#include <netinet/in.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,6 +60,17 @@ int main(int argc, char *argv[]) {
 
 	clientport = atoi(argv[1]);
 	localport = atoi(argv[2]);
+
+	if (argc == 5) {
+		struct addrinfo *testrmt;
+		if (fillServInfo(argv[4], argv[3], &testrmt) < 0) {
+			printf("tcpd: possible error\n");
+		}
+		if (((struct sockaddr_in *)testrmt->ai_addr)->sin_addr.s_addr
+		     == htonl(INADDR_ANY)) {
+			argc = 4;  // Started with INADDR_ANY as arg, assume server side
+		}
+	}
 
 	// For either client or server side, trollport can be random since not used
 	// elsewhere

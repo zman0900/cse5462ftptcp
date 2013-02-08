@@ -14,7 +14,7 @@ DEPS2 = $(SRCS2:.c=.d)
 OBJS3 = $(SRCS3:.c=.o)
 DEPS3 = $(SRCS3:.c=.d)
 
-CPP = gcc -I/usr/include/glib-2.0
+CPP = gcc
 DEBUG = -ggdb
 CPPFLAGS = -Wall $(DEBUG)
 LFLAGS = 
