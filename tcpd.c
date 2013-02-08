@@ -7,7 +7,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "common.h"
@@ -215,16 +214,6 @@ void listenToPorts() {
 void preExit() {
 	// Kill troll before exiting
 	killTroll();
-}
-
-int randCalled = 0;
-int randomPort() {
-	if (!randCalled) {
-		// Initialize rand
-		srand(time(NULL));
-		randCalled = 1;
-	}
-	return rand() % 64512 + 1024;
 }
 
 void recvClientMsg() {

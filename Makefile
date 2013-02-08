@@ -14,10 +14,10 @@ DEPS2 = $(SRCS2:.c=.d)
 OBJS3 = $(SRCS3:.c=.o)
 DEPS3 = $(SRCS3:.c=.d)
 
-CPP = gcc
+CPP = gcc -I/usr/include/glib-2.0
 DEBUG = -ggdb
-CPPFLAGS = -Wall $(DEBUG)
-LFLAGS = 
+CPPFLAGS = -Wall $(DEBUG) `pkg-config --cflags glib-2.0`
+LFLAGS = `pkg-config --libs glib-2.0`
 
 .PHONY: clean all
 

@@ -43,6 +43,11 @@ int sendAllTo(int sockfd, const void *buf, int *len,
               const struct sockaddr *dest_addr, socklen_t dest_len);
 
 /*
+ * Returns a random int between 1024 and 65535 inclusive
+ */
+int randomPort();
+
+/*
  * Calls recv repeatedly until b bytes have been received, or returns -1 on
  * failure and sets b to number of bytes received.
  */
