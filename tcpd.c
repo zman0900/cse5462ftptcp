@@ -162,7 +162,7 @@ void forkTroll() {
 	} else if (troll_pid == 0) {
 		// Child
 		execl("./troll", "troll", "-S", "localhost", "-b", ltp, "-C",
-		      remote_host, "-a", rtp, tp, (char *)NULL);
+		      remote_host, "-a", rtp, tp, "-x", "0", (char *)NULL);
 		// Only returns on error
 		perror("tcpd: execl");
 		exit(1);

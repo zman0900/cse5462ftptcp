@@ -16,6 +16,7 @@ typedef struct _sockinfo {
 	int localport;
 	int tcpdport;
 	pid_t tcpd_pid;
+	struct addrinfo *tcpdaddr;
 } sockinfo;
 
 char addrString[INET6_ADDRSTRLEN];
@@ -42,7 +43,7 @@ pid_t forkTcpd(int clientport, int localport, int remoteport, char *host) {
 		exit(1);
 	} else {
 		// Parent
-		sleep(1); // give it time to start
+		sleep(2); // give it time to start
 		printf("tcpd_interface: Started tcpd (pid %d)\n", tcpd_pid);
 	}
 	return tcpd_pid;
@@ -90,7 +91,6 @@ int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 	// Bind socket for communication with tcpd
 	char lp[6];
 	sprintf(lp, "%d", si->localport);
-	//sockfd = bindUdpSocket(NULL, lp);
 	if (fillServInfo(NULL, lp, &servinfo) < 0) {
 		return -1;
 	}
@@ -122,6 +122,16 @@ int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 	       si->localport, si->tcpdport, remoteport);
 	si->tcpd_pid = forkTcpd(si->localport, si->tcpdport, remoteport, addrString);
 
+	// Prepare address info for tcpd destination
+	char tp[6];
+	sprintf(tp, "%d", si->tcpdport);
+	struct addrinfo *tcpdaddr;
+	if (fillServInfo("localhost", tp, &tcpdaddr) < 0) {
+		fprintf(stderr, "tcpd_interface: Couldn't get address info for tcpd\n");
+		return -1;
+	}
+	si->tcpdaddr = tcpdaddr;
+
 	// Store in array for other functions
 	sockets[sockfd] = si;
 	return 0;
@@ -136,7 +146,27 @@ int CONNECT(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 }
 
 ssize_t SEND(int sockfd, const void *buf, size_t len, int flags) {
-	return -666;
+	// Get socket info
+	if (sockfd > num_sockets || sockets[sockfd] == NULL) {
+		// Socket not open
+		fprintf(stderr, "tcpd_interface: attempt to send to non-open socket\n");
+		return -1;
+	}
+	sockinfo *si = sockets[sockfd];
+
+	// Send all the bytes
+	if (sendAllTo(sockfd, buf, (int *)&len, si->tcpdaddr->ai_addr,
+		           si->tcpdaddr->ai_addrlen) < 0) {
+		perror("tcpd_interface: SEND");
+		return -1;
+	}
+
+	printf("tcpd_interface: Sent %d bytes\n", len);
+
+	// TODO: remove this (for project)
+	sleep(0.01);
+
+	return len;
 }
 
 ssize_t RECV(int sockfd, void *buf, size_t len, int flags) {
