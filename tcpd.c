@@ -31,6 +31,7 @@ char addrString[INET6_ADDRSTRLEN];
 
 // TCP State
 int tcp_isConn = 0;
+uint32_t seqnum = 0;
 
 // Functions
 void bindLocal();
@@ -196,10 +197,9 @@ void recvClientMsg() {
 	printf("tcpd: ClientMsg: Received %d bytes\n", bytes);
 
 	// Wrap with tcp
-	Header *h = tcpheader_create(listenport, rmttrollport, 0, 0, 0, 0, 0, 0); // TODO: fill in properly
-	memcpy(sendBuf, h, TCP_HEADER_SIZE);
-	free(h);
-	memcpy(sendBuf+TCP_HEADER_SIZE, recvBuf, bytes);
+	Header *h = tcpheader_create(listenport, rmttrollport, seqnum, 0, 0, 0, 0, 0,
+	                             recvBuf, bytes, sendBuf); // TODO: fill in properly
+	seqnum += bytes;
 	sendBufSize = TCP_HEADER_SIZE + bytes;
 
 	// Send to other tcpd through troll
@@ -217,9 +217,16 @@ void recvTcpMsg() {
 		exit(1);
 	}
 	printf("tcpd: TcpMsg: Received %d bytes\n", bytes);
+	Header *h = (Header *)recvBuf;
+
+	// Verify checksum
+	if (!tcpheader_verifycrc(recvBuf, bytes)) {
+		printf("tcpd: CHECKSUM FAILED! seq:%u\n", ntohl(h->field.seqnum));
+	} else {
+		printf("tcpd: Checksum OK seq:%u\n", ntohl(h->field.seqnum));
+	}
 
 	// Unwrap tcp
-	Header *h = (Header *)recvBuf;
 	char *data = recvBuf+TCP_HEADER_SIZE;
 
 	// If this is a new connection
@@ -269,11 +276,12 @@ void sendToClient() {
 
 // Expects sendBuf and sendBufSize to be prefilled
 void sendToTroll() {
+	uint16_t seqnum = ntohl(((Header *)sendBuf)->field.seqnum);
 	if (sendAllTo(socklocal, sendBuf, &sendBufSize, trolladdr->ai_addr,
 		           trolladdr->ai_addrlen) < 0) {
 		perror("tcpd: sendto");
 		preExit();
 		exit(1);
 	}
-	printf("tcpd: TcpMsg: Sent %d bytes\n", sendBufSize);
+	printf("tcpd: TcpMsg: Sent %d bytes, seq:%u\n", sendBufSize, seqnum);
 }

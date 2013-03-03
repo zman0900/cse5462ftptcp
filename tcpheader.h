@@ -32,7 +32,8 @@ typedef union _header {
  */
 Header* tcpheader_create(uint16_t sport, uint16_t dport, uint32_t seqnum,
                         uint32_t acknum, int isSyn, int isAck, int isFin,
-                        uint32_t tsecr);
+                        uint32_t tsecr, char *data, int data_bytes,
+                        char *packet);
 
 /*
  * These return 0 for false, positive for true
@@ -40,5 +41,7 @@ Header* tcpheader_create(uint16_t sport, uint16_t dport, uint32_t seqnum,
 int tcpheader_isack(Header *h);
 int tcpheader_isfin(Header *h);
 int tcpheader_issyn(Header *h);
+
+int tcpheader_verifycrc(char *packet, int bytes);
 
 #endif

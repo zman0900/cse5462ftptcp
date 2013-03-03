@@ -12,7 +12,7 @@ if [ $# -ne 2 ]; then
 	exit
 fi
 
-./troll -S localhost -b 6664 -C $1 -a $2 6665 -x 0 &
+./troll -S localhost -b 6664 -C $1 -a $2 6665 -x 0 -g 25 -t &
 TROLL_PID=$!
 ./tcpd $2 $1
 kill $TROLL_PID
