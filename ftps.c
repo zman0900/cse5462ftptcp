@@ -90,19 +90,10 @@ void receiveFile(int connfd) {
 	printf("ftps: Done\n");
 }
 
-/*void sigchld_handler(int s) {
-	while(waitpid(-1, NULL, WNOHANG) > 0);
-	printf("ftps: Child finished.\n");
-}*/
-
 int main(int argc, char *argv[]) {
 	int sockfd, connfd;
 	struct addrinfo hints, *servinfo;
 	int status;
-	//struct sigaction sa;
-	//struct sockaddr_storage clientaddr;
-	//socklen_t ca_size;
-	//char addrString[INET6_ADDRSTRLEN];
 
 	if (argc != 2) {
 		printf("Usage: %s <port>\n", argv[0]);
@@ -146,53 +137,10 @@ int main(int argc, char *argv[]) {
 	// Clean up
 	freeaddrinfo(servinfo);
 
-	// Start listening
-	/*if (listen(sockfd, CONNECTION_QUEUE) == -1) {
-		perror("ftps: listen");
-		exit(1);
-	}
-	printf("ftps: Listening for connections...(Ctrl-C to stop)\n");*/
-
-	// Zombie hunting
-	/*sa.sa_handler = sigchld_handler;
-	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = SA_RESTART;
-	if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-		perror("ftps: sigaction");
-		exit(1);
-	}*/
-
-	// Listen forever
-	/*while(1) {
-		ca_size = sizeof clientaddr;
-		connfd = ACCEPT(sockfd, (struct sockaddr *)&clientaddr, &ca_size);
-		if (connfd == -1) {
-			perror("ftps: accept");
-			continue;
-		}
-		getInAddrString(clientaddr.ss_family, (struct sockaddr *)&clientaddr, 
-			addrString, sizeof addrString);
-		printf("ftps: New connection from %s\n", addrString);
-
-		int pid;
-		if ((pid = fork()) < 0) {
-			perror("fork");
-			exit(1);
-		} else if (pid == 0) {
-			// Child process
-			// Close listener in child
-			close(sockfd);*/
-			//receiveFile(connfd);
-			receiveFile(sockfd);
-			CLOSE(sockfd);
-			exit(0);
-		/*} else {
-			// Parent process
-			printf("ftps: Started child %d\n", pid);
-			// Close connection in parent
-			close(connfd);
-		}
-	}*/
+	// Wait for file then exit
+	receiveFile(sockfd);
+	CLOSE(sockfd);
+	exit(0);
 
 	return 0;
 }

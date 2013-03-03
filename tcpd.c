@@ -47,8 +47,8 @@ void sendToClient();
 void sendToTroll();
 
 int main(int argc, char *argv[]) {
-	if (argc < 4 || argc > 5) {
-		printf("Usage: %s <client-port> <local-port> <remote-port> ", argv[0]);
+	if (argc < 2 || argc > 3) {
+		printf("Usage: %s <remote-port> ", argv[0]);
 		printf("[<remote-host>]\n\n");
 		printf("If remote-host is specified, will start troll and attempt ");
 		printf("connection to tcpd\nlistening on remote-host:remote-port.\n");
@@ -58,27 +58,26 @@ int main(int argc, char *argv[]) {
 	}
 	printf("tcpd: Starting...\n");
 
-	clientport = atoi(argv[1]);
-	localport = atoi(argv[2]);
-
-	if (argc == 5) {
+	if (argc == 3) {
 		struct addrinfo *testrmt;
-		if (fillServInfo(argv[4], argv[3], &testrmt) < 0) {
+		if (fillServInfo(argv[2], argv[1], &testrmt) < 0) {
 			printf("tcpd: possible error\n");
 		}
 		if (((struct sockaddr_in *)testrmt->ai_addr)->sin_addr.s_addr
 		     == htonl(INADDR_ANY)) {
-			argc = 4;  // Started with INADDR_ANY as arg, assume server side
+			argc = 2;  // Started with INADDR_ANY as arg, assume server side
 		}
 	}
 
 	// For either client or server side, trollport can be random since not used
 	// elsewhere
-	if (argc == 4) {
+	if (argc == 2) {
 		// Server side
 		isClientSide = 0;
+		clientport = LOCAL_PORT_SERVER;
+		localport = TCPD_PORT_SERVER;
 		// Listen on "remote-port"
-		listenport = atoi(argv[3]);
+		listenport = atoi(argv[1]);
 		// Troll's remote port and host will be set later after receiving first
 		// connection (should be other tcpd's host and listenport)
 		rmttrollport = -1;
@@ -86,10 +85,12 @@ int main(int argc, char *argv[]) {
 	} else {
 		// Client side
 		isClientSide = 1;
+		clientport = LOCAL_PORT_CLIENT;
+		localport = TCPD_PORT_CLIENT;
 		// Listen on random port, put that in tcp source field
 		// Troll's remote port will be "remote-port"
-		rmttrollport = atoi(argv[3]);
-		remote_host = argv[4];
+		rmttrollport = atoi(argv[1]);
+		remote_host = argv[2];
 		do {
 			listenport = randomPort();
 		} while(listenport == rmttrollport || listenport == localport

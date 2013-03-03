@@ -1,4 +1,4 @@
-CSE 5462 Homework 2 Question 1
+CSE 5462 Project
 Dan Ziemba
 
 Simple file transfer client and server using fake tcp sockets that actually
@@ -12,9 +12,22 @@ Build:
 Run make
 
 Run:
-Both server and client will automatically spawn tcpd and troll as needed.
+Both server and client tcpd will automatically spawn troll as needed.
 	Server:
-	./ftps <port>
+	./tcpd <listen-port>
+	./ftps <listen-port>
 
 	Client:
+	./tcpd <server-port> <server-host>
 	./ftpc <server-host> <server-port> <file-name>
+
+
+Implementation Details:
+ftps will listen on port 6660 for messages from tcpd
+ftps will send messages to tcpd on port 6661
+tcpd in server mode will send messages to troll on port 6662
+tcpd in server mode will listen on port 6661 for messages from troll
+ftpc will listen on port 6663 for messages from tcpd
+ftpc will send messages to tcpd on port 6664
+tcpd in client mode will send messages to troll on port 6665
+tcpd in client mode will listen on port 6664 for messages from troll

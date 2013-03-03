@@ -21,73 +21,33 @@ typedef struct _sockinfo {
 } sockinfo;
 
 char addrString[INET6_ADDRSTRLEN];
-sockinfo **sockets;
-int num_sockets = -1;
-
-pid_t forkTcpd(int clientport, int localport, int remoteport, char *host) {
-	// Convert ports to strings
-	char cp[6], lp[6], rp[6];
-	sprintf(cp, "%d", clientport);
-	sprintf(lp, "%d", localport);
-	sprintf(rp, "%d", remoteport);
-
-	pid_t tcpd_pid;
-	if ((tcpd_pid = vfork()) < 0) {
-		perror("tcpd_interface: vfork");
-		exit(1);
-	} else if (tcpd_pid == 0) {
-		// Child
-		execl("./tcpd", "tcpd", cp, lp, rp, host, 
-		      (char *)NULL);
-		// Only returns on error
-		perror("tcpd_interface: execl");
-		exit(1);
-	} else {
-		// Parent
-		sleep(2); // give it time to start
-		printf("tcpd_interface: Started tcpd (pid %d)\n", tcpd_pid);
-	}
-	return tcpd_pid;
-}
-
-void killTcpd(pid_t tcpd_pid) {
-	kill(tcpd_pid, SIGINT);
-}
+sockinfo *si = NULL;
+int serverMode = 0;
 
 //// PUBLIC FUNCTIONS ////
 
 int SOCKET(int domain, int type, int protocol) {
-	// Ignore input, create udf ipv4 socket
+	// Ignore input, create udp ipv4 socket
 	return socket(AF_INET, SOCK_DGRAM, 0);
 }
 
 int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 	struct addrinfo *servinfo, *p;
 
-	if (num_sockets < sockfd) {
-		// Increase array size (waste of memory, but o well)
-		sockinfo **more_sockets;
-		more_sockets = realloc(sockets, sockfd+1 * sizeof(sockinfo *));
-		if (more_sockets == NULL) {
-			printf("tcdp_interface: error allocating memory\n");
-			return -1;
-		}
-		sockets = more_sockets;
-		num_sockets = sockfd;
+	if (((struct sockaddr_in *)addr)->sin_addr.s_addr
+		     == htonl(INADDR_ANY)) {
+		printf("tcpd_interface: Server mode\n");
+		serverMode = 1;
 	}
 
 	// Store provided info for later
-	sockinfo *si = malloc(sizeof(sockinfo));
+	si = malloc(sizeof(sockinfo));
 	si->addr = addr;
 	si->addrlen = addrlen;
 	// Choose ports for tcpd communication
 	int remoteport = ntohs(((struct sockaddr_in *)addr)->sin_port);
-	do {
-		si->localport = randomPort();
-	} while (remoteport == si->localport);
-	do {
-		si->tcpdport = randomPort();
-	} while (remoteport == si->tcpdport || si->localport == si->tcpdport);
+	si->localport = serverMode ? LOCAL_PORT_SERVER : LOCAL_PORT_CLIENT;
+	si->tcpdport = serverMode ? TCPD_PORT_SERVER : TCPD_PORT_CLIENT;
 
 	// Bind socket for communication with tcpd
 	char lp[6];
@@ -121,7 +81,6 @@ int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 	// Fork tcpd using provided info
 	printf("tcpd_interface: Ports:\n\tlocal\t%d\n\ttcpd\t%d\n\tremote\t%d\n",
 	       si->localport, si->tcpdport, remoteport);
-	si->tcpd_pid = forkTcpd(si->localport, si->tcpdport, remoteport, addrString);
 
 	// Prepare address info for tcpd destination
 	char tp[6];
@@ -133,8 +92,6 @@ int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 	}
 	si->tcpdaddr = tcpdaddr;
 
-	// Store in array for other functions
-	sockets[sockfd] = si;
 	return 0;
 }
 
@@ -147,13 +104,12 @@ int CONNECT(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 }
 
 ssize_t SEND(int sockfd, const void *buf, size_t len, int flags) {
-	// Get socket info
-	if (sockfd > num_sockets || sockets[sockfd] == NULL) {
+	// Check if open
+	if (si == NULL) {
 		// Socket not open
 		fprintf(stderr, "tcpd_interface: attempt to send to non-open socket\n");
 		return -1;
 	}
-	sockinfo *si = sockets[sockfd];
 
 	// Send all the bytes
 	if (sendAllTo(sockfd, buf, (int *)&len, si->tcpdaddr->ai_addr,
@@ -174,13 +130,12 @@ ssize_t SEND(int sockfd, const void *buf, size_t len, int flags) {
 }
 
 ssize_t RECV(int sockfd, void *buf, size_t len, int flags) {
-	// Get socket info
-	if (sockfd > num_sockets || sockets[sockfd] == NULL) {
+	// Check if open
+	if (si == NULL) {
 		// Socket not open
 		fprintf(stderr, "tcpd_interface: attempt to recv from non-open socket\n");
 		return -1;
 	}
-	sockinfo *si = sockets[sockfd];
 
 	int bytes;
 	if ((bytes = recvfrom(sockfd, buf, len, 0, si->tcpdaddr->ai_addr,
@@ -195,10 +150,9 @@ ssize_t RECV(int sockfd, void *buf, size_t len, int flags) {
 
 int CLOSE(int fd) {
 	// Get data
-	if (fd <= num_sockets && sockets[fd] != NULL) {
-		sockinfo *si = sockets[fd];
-		// Kill children
-		killTcpd(si->tcpd_pid);
+	if (si != NULL) {
+		free(si);
+		si = NULL;
 		return close(fd);
 	} else {
 		// Socket not open

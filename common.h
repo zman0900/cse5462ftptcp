@@ -9,6 +9,11 @@
 #define MSS 1000 //bytes
 #define WINSIZE 20 //mss
 
+#define LOCAL_PORT_SERVER 6660
+#define LOCAL_PORT_CLIENT 6663
+#define TCPD_PORT_SERVER 6661
+#define TCPD_PORT_CLIENT 6664
+
 /*
  * Returns bound socket, or negative on fail
  */
