@@ -91,7 +91,7 @@ void receiveFile(int connfd) {
 }
 
 int main(int argc, char *argv[]) {
-	int sockfd, connfd;
+	int sockfd;
 	struct addrinfo hints, *servinfo;
 	int status;
 

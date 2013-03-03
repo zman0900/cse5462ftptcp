@@ -13,6 +13,8 @@
 #define LOCAL_PORT_CLIENT 6663
 #define TCPD_PORT_SERVER 6661
 #define TCPD_PORT_CLIENT 6664
+#define TROLL_PORT_SERVER 6662
+#define TROLL_PORT_CLIENT 6665
 
 /*
  * Returns bound socket, or negative on fail

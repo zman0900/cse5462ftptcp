@@ -12,12 +12,17 @@ Build:
 Run make
 
 Run:
-Both server and client tcpd will automatically spawn troll as needed.
+In order to start troll on the server, it is necessary to know the host of the
+client that will be connecting.  Note the listen-port+1.  If server will listen
+on port 10000 for example, client will listen on port 10001 so that is what 
+should be given to server side troll.
 	Server:
+	./troll -S localhost -b 6661 -C <client-host> -a <listen-port+1> 6662 [more]
 	./tcpd <listen-port>
 	./ftps <listen-port>
 
 	Client:
+	./troll -S localhost -b 6664 -C <server-host> -a <server-port> 6665 [more]
 	./tcpd <server-port> <server-host>
 	./ftpc <server-host> <server-port> <file-name>
 

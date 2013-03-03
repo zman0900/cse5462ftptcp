@@ -23,7 +23,6 @@ char *remote_host;
 
 // Globals
 int isClientSide;
-int troll_pid = -1;
 int socklocal, socklisten;
 struct addrinfo *trolladdr, *clientaddr;
 char recvBuf[TCP_HEADER_SIZE+MSS], sendBuf[TCP_HEADER_SIZE+MSS];
@@ -36,11 +35,8 @@ int tcp_isConn = 0;
 // Functions
 void bindLocal();
 void bindListen();
-void forkTroll();
-void killTroll();
 void listenToPorts();
 void preExit();
-int randomPort();
 void recvClientMsg();
 void recvTcpMsg();
 void sendToClient();
@@ -50,7 +46,7 @@ int main(int argc, char *argv[]) {
 	if (argc < 2 || argc > 3) {
 		printf("Usage: %s <remote-port> ", argv[0]);
 		printf("[<remote-host>]\n\n");
-		printf("If remote-host is specified, will start troll and attempt ");
+		printf("If remote-host is specified, will start as client and attempt ");
 		printf("connection to tcpd\nlistening on remote-host:remote-port.\n");
 		printf("Without remote-host, will listen on remote-port for ");
 		printf("connection from remote\ntroll.\n");
@@ -76,6 +72,7 @@ int main(int argc, char *argv[]) {
 		isClientSide = 0;
 		clientport = LOCAL_PORT_SERVER;
 		localport = TCPD_PORT_SERVER;
+		trollport = TROLL_PORT_SERVER;
 		// Listen on "remote-port"
 		listenport = atoi(argv[1]);
 		// Troll's remote port and host will be set later after receiving first
@@ -87,30 +84,19 @@ int main(int argc, char *argv[]) {
 		isClientSide = 1;
 		clientport = LOCAL_PORT_CLIENT;
 		localport = TCPD_PORT_CLIENT;
-		// Listen on random port, put that in tcp source field
+		trollport = TROLL_PORT_CLIENT;
+		// Listen on 1 + remote port, put that in tcp source field
 		// Troll's remote port will be "remote-port"
 		rmttrollport = atoi(argv[1]);
 		remote_host = argv[2];
-		do {
-			listenport = randomPort();
-		} while(listenport == rmttrollport || listenport == localport
-		        || listenport == clientport);
+		listenport = 1 + rmttrollport;
 	}
 	// Generate trollport without collsion
-	do {
-		trollport = randomPort();
-	} while (trollport == listenport || trollport == rmttrollport
-	         || trollport == localport || trollport == clientport);
 
 	// Print selected ports
 	printf("tcpd: Ports:\n\tclient\t%d\n\tlocal\t%d\n\tlisten\t%d\n\ttroll\t%d\
 \n\trtroll\t%d\n",
 	       clientport, localport, listenport, trollport, rmttrollport);
-
-	// If client side, fork troll now, otherwise do it later
-	if (isClientSide) {
-		forkTroll();
-	}
 
 	// Set up some address info
 	char tp[6], cp[6];
@@ -162,39 +148,6 @@ void bindListen() {
 	}
 }
 
-void forkTroll() {
-	// Convert ports to strings
-	char tp[6], rtp[6], ltp[6];
-	sprintf(tp, "%d", trollport);
-	sprintf(rtp, "%d", rmttrollport);
-	sprintf(ltp, "%d", localport);
-
-	if ((troll_pid = vfork()) < 0) {
-		perror("tcpd: vfork");
-		exit(1);
-	} else if (troll_pid == 0) {
-		// Child
-		execl("./troll", "troll", "-S", "localhost", "-b", ltp, "-C",
-		      remote_host, "-a", rtp, tp, "-x", "0", (char *)NULL);
-		// Only returns on error
-		perror("tcpd: execl");
-		exit(1);
-	} else {
-		// Parent
-		sleep(1);  // Make sure troll is ready
-		printf("tcpd: Started troll (pid %d)\n", troll_pid);
-	}
-}
-
-void killTroll() {
-	if (troll_pid > 0) {
-		// Try not to kill troll if its still working
-		sleep(1);
-		kill(troll_pid, SIGINT);
-		troll_pid = -1;
-	}
-}
-
 void listenToPorts() {
 	fd_set readfds;
 
@@ -227,8 +180,7 @@ void listenToPorts() {
 }
 
 void preExit() {
-	// Kill troll before exiting
-	killTroll();
+	
 }
 
 void recvClientMsg() {
@@ -272,7 +224,7 @@ void recvTcpMsg() {
 
 	// If this is a new connection
 	if (!tcp_isConn) {
-		// Figure out where to send replys to if server side and start troll
+		// Figure out where to send replys to if server side
 		if (!isClientSide) {
 			// Set up some address info
 			getInAddrString(senderaddr.sin_family,
@@ -282,7 +234,6 @@ void recvTcpMsg() {
 			rmttrollport = ntohs(h->field.sport);
 			remote_host = malloc(INET6_ADDRSTRLEN);
 			strcpy(remote_host, addrString);
-			//forkTroll();  // Not for HW2
 			printf("tcpd: New connection open from %s, reply port %d\n",
 			        remote_host, rmttrollport);
 		}
@@ -296,7 +247,6 @@ void recvTcpMsg() {
 		if (!isClientSide) {
 			free(remote_host);
 			rmttrollport = -1;
-			killTroll();
 		}
 	}
 
