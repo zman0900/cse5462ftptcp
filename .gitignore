@@ -18,5 +18,8 @@
 ftps
 ftpc
 tcpd
+timer
+
+# Other
 *.d
 ftps-out
