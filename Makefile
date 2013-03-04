@@ -48,6 +48,6 @@ $(TARGET4): $(OBJS4)
 
 clean:
 	rm -f $(OBJS1) $(DEPS1) $(TARGET1) $(OBJS2) $(DEPS2) $(TARGET2) $(OBJS3) \
-	      $(DEPS3) $(TARGET3) $(DEPS4) $(TARGET4)
+	      $(DEPS3) $(TARGET3) $(OBJS4) $(DEPS4) $(TARGET4)
 
 -include $(DEPS1) $(DEPS2) $(DEPS3) $(DEPS4)
