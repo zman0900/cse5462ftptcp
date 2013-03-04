@@ -3,6 +3,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,7 @@
 
 #include "common.h"
 #include "tcpheader.h"
+#include "timer_interface.h"
 
 // Ports
 int clientport;     // Port local ftps/ftpc uses

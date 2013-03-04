@@ -1,4 +1,6 @@
+#include <endian.h>
 #include <netinet/in.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,18 +11,25 @@
 
 #include "common.h"
 
-#define RECV_BUF_SIZE 1000
+#define PACKET_SIZE 21
+
+/*
+ * PACKET FORMAT (total 21 bytes, all unsigned)
+ * time in seconds (8 bytes)
+ * additional time in microseconds (8 bytes)
+ * sequence number (4 bytes)
+ * start(1)/cancel(0) (1 byte)
+ */
 
 typedef struct Dlist Dlist;
 struct Dlist {
 	struct sockaddr_in *client;
 	struct timeval *dtime;
-	char *data;
-	int data_bytes;
+	uint32_t seqnum;
 	Dlist *next;
 };
 
-char recvBuf[RECV_BUF_SIZE];
+char recvBuf[PACKET_SIZE];
 int socklisten;
 Dlist *dlist_start = NULL;
 
@@ -29,7 +38,7 @@ void recvMsg();
 // Following is taken from gnu.org
 /* Subtract the `struct timeval' values X and Y,
    storing the result in RESULT.
-   Return 1 if the difference is negative, otherwise 0. */ 
+   Return 1 if the difference is negative, otherwise 0. */
 int
 timeval_subtract (result, x, y)
 	struct timeval *result, *x, *y;
@@ -72,7 +81,7 @@ int main(int argc, char *argv[]) {
 	// Bind port
 	socklisten = bindUdpSocket(NULL, p);
 	if (socklisten <= 0) {
-		fprintf(stderr, "timer: bind local port failed\n");
+		fprintf(stderr, "timer: bind listen port failed\n");
 		exit(1);
 	}
 
@@ -132,23 +141,39 @@ int main(int argc, char *argv[]) {
 
 void recvMsg() {
 	int bytes;
+	uint64_t sec, usec;
+	uint32_t seqnum;
+	uint8_t flag;
+
 	struct sockaddr_in *senderaddr = malloc(sizeof(struct sockaddr_in));
 	socklen_t saddr_sz = sizeof senderaddr;
-	if ((bytes = recvfrom(socklisten, recvBuf, RECV_BUF_SIZE, 0,
+	if ((bytes = recvfrom(socklisten, recvBuf, PACKET_SIZE, 0,
 	                      (struct sockaddr *)senderaddr, &saddr_sz)) < 0) {
 		perror("timer: recvfrom");
 		exit(1);
 	}
 	printf("timer: Msg: Received %d bytes\n", bytes);
+	if (bytes != PACKET_SIZE) {
+		fprintf(stderr, "timer: BAD PACKET RECEIVED!\n");
+	}
+	memcpy(&sec, recvBuf, 8);
+	memcpy(&usec, recvBuf+8, 8);
+	memcpy(&seqnum, recvBuf+16, 4);
+	memcpy(&flag, recvBuf+20, 1);
 
-	Dlist *item = malloc(sizeof(Dlist));
-	item->client = senderaddr;
-	item->data = malloc(bytes);
-	memcpy(item->data, recvBuf, bytes);
-	item->data_bytes = bytes;
-	item->next = dlist_start;
-	item->dtime = malloc(sizeof(struct timeval));
-	item->dtime->tv_sec = 2;
-	item->dtime->tv_usec = 100000;
-	dlist_start = item;
+	if (flag) {
+		// Start timer, create new dlist entry
+		printf("timer: Starting for seqnum %u\n", ntohl(seqnum));
+		Dlist *item = malloc(sizeof(Dlist));
+		item->client = senderaddr;
+		item->dtime = malloc(sizeof(struct timeval));
+		item->dtime->tv_sec = be64toh(sec);
+		item->dtime->tv_usec = be64toh(usec);
+		item->seqnum = ntohl(seqnum);
+		item->next = dlist_start;
+		dlist_start = item;
+	} else {
+		// Cancel timer
+		printf("timer: Canceling for seqnum %u\n", ntohl(seqnum));
+	}
 }

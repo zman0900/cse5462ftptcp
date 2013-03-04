@@ -19,6 +19,7 @@ ftps
 ftpc
 tcpd
 timer
+timer-test
 
 # Other
 *.d
