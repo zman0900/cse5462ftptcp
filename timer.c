@@ -36,6 +36,8 @@ Dlist *dlist_start = NULL;
 void recvMsg();
 void dlist_print();
 void dlist_insert(Dlist *item);
+// Returns NULL if no item found in list
+Dlist* dlist_remove(unsigned short port, uint32_t seqnum);
 
 int main(int argc, char *argv[]) {
 	fd_set readfds;
@@ -198,7 +200,10 @@ void dlist_insert(Dlist *item) {
 	timersub(item->dtime, total_left, new);
 	if (right != NULL)
 		timersub(total_right, item->dtime, right->dtime);
+	free(item->dtime);
 	item->dtime = new;
+	free(total_left);
+	free(total_right);
 
 	// Insert
 	if (left == NULL) {
@@ -210,4 +215,8 @@ void dlist_insert(Dlist *item) {
 		left->next = item;
 		item->next = right;
 	}
+}
+
+Dlist* dlist_remove(unsigned short port, uint32_t seqnum) {
+
 }
