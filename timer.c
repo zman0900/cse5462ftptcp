@@ -85,7 +85,6 @@ int main(int argc, char *argv[]) {
 		}
 
 		if (FD_ISSET(socklisten, &readfds)) {
-			printf("timer: select got msg\n");
 			recvMsg();
 		}
 
@@ -151,6 +150,14 @@ void recvMsg() {
 	} else {
 		// Cancel timer
 		printf("timer: Canceling for seqnum %u\n", ntohl(seqnum));
+		Dlist *remove = dlist_remove(senderaddr->sin_port, ntohl(seqnum));
+		if (remove == NULL) {
+			fprintf(stderr, "timer: Attempted to cancel non-existing timer!\n");
+		} else {
+			// Free memory
+			free(remove->dtime);
+			free(remove);
+		}
 	}
 
 	printf("timer: delta list after start or cancel\n");
@@ -218,5 +225,30 @@ void dlist_insert(Dlist *item) {
 }
 
 Dlist* dlist_remove(unsigned short port, uint32_t seqnum) {
+	Dlist *prev = NULL;
+	Dlist *ptr = dlist_start;
 
+	// Find
+	while (ptr != NULL) {
+		if (ptr->client->sin_port == port && ptr->seqnum == seqnum)
+			break;
+		prev = ptr;
+		ptr = ptr->next;
+	}
+
+	// Remove
+	if (ptr != NULL) {
+		if (ptr->next != NULL) {
+			// Need to update next's time
+			timeradd(ptr->dtime, ptr->next->dtime, ptr->next->dtime);
+		}
+		if (prev == NULL) {
+			// Removing first
+			dlist_start = ptr->next;
+		} else {
+			prev->next = ptr->next;
+		}
+	}
+
+	return ptr;
 }
