@@ -37,17 +37,18 @@ void recvMsg();
 void dlist_print();
 void dlist_insert(Dlist *item);
 // Returns NULL if no item found in list
+// Port should be in network byte order
 Dlist* dlist_remove(unsigned short port, uint32_t seqnum);
+void dlist_updateTime(struct timeval *elapsed);
 
 int main(int argc, char *argv[]) {
 	fd_set readfds;
-	struct timeval *timer, *starttime, *now, *diff, *diff2;
+	struct timeval *timer, *starttime, *now, *elapsed;
 
 	timer = NULL;
 	starttime = malloc(sizeof(struct timeval));
 	now = malloc(sizeof(struct timeval));
-	diff = malloc(sizeof(struct timeval));
-	diff2 = malloc(sizeof(struct timeval));
+	elapsed = malloc(sizeof(struct timeval));
 
 	// Port to string
 	char p[6];
@@ -66,50 +67,69 @@ int main(int argc, char *argv[]) {
 		FD_SET(socklisten, &readfds);
 
 		// Set timer
-		/*if (dlist_start != NULL) {
-			timer = malloc(sizeof(struct timeval));
+		if (dlist_start != NULL) {
+			if (timer == NULL)
+				timer = malloc(sizeof(struct timeval));
 			timer->tv_sec = dlist_start->dtime->tv_sec;
 			timer->tv_usec = dlist_start->dtime->tv_usec;
-			printf("timer: should wake up in %ld.%06ld sec\n", timer->tv_sec,
+			printf("\ntimer: should wake up in %ld.%06ld sec\n", timer->tv_sec,
 			       timer->tv_usec);
-		} else {*/
-			timer = NULL;
-		/*}
-		gettimeofday(starttime, NULL);*/
+		} else {
+			if (timer != NULL) {
+				free(timer);
+				timer = NULL;
+			}
+		}
+		gettimeofday(starttime, NULL);
 
-		// Block until input on a socket
-
+		// Block until input on socket or timeout
 		if (select(FD_SETSIZE, &readfds, NULL, NULL, timer) < 0) {
 			perror("timer: select");
 			exit(1);
 		}
 
+		// Update time after unblocking
+		gettimeofday(now, NULL);
+		timersub(now, starttime, elapsed);
+		printf("timer: woke up after %ld.%06ld sec\n", elapsed->tv_sec,
+		       elapsed->tv_usec);
+		dlist_updateTime(elapsed);
+
+		// Keep track of time while working.  Also serves to "start" timer as
+		// soon as message received without first processing it
+		gettimeofday(starttime, NULL);
+
 		if (FD_ISSET(socklisten, &readfds)) {
+			// Wake up for add/remove timer
 			recvMsg();
+		} else {
+			// (this shouldn't be null if there was a timer, but...)
+			if (dlist_start != NULL) {
+				if (dlist_start->dtime->tv_sec <= 0
+				       && dlist_start->dtime->tv_usec <= 0) {
+					// Timer expired
+					//TODO: Send response message
+					printf("timer: TIMER EXPIRED port:%u seqnum:%u\n",
+					       ntohs(dlist_start->client->sin_port),
+					       dlist_start->seqnum);
+					// Remove item
+					Dlist *tmp = dlist_start;
+					dlist_start = tmp->next;
+					free(tmp->dtime);
+					free(tmp);
+					// Print
+					printf("timer: delta list after timer expire:\n");
+					dlist_print();
+				}
+			}
 		}
 
-		// Check time
-		/*gettimeofday(now, NULL);
-		timeval_subtract(diff, now, starttime);
-		printf("timer: woke up after %ld.%06ld sec\n", diff->tv_sec,
-		       diff->tv_usec);
-		printf("timer: starttime: %ld.%06ld sec\n", starttime->tv_sec,
-		       starttime->tv_usec);
-		printf("timer: now: %ld.%06ld sec\n", now->tv_sec, now->tv_usec);*/
-		/*if (timer != NULL) {
-			int neg = timeval_subtract(diff2, dlist_start->dtime, diff);
-			printf("timer: neg:%d diff:%ld.%06ld\n", neg, diff2->tv_sec,
-			       diff2->tv_usec);
-			if (neg || (diff2->tv_sec == 0 && diff2->tv_usec < 100)) {
-				// Timer expired for first list item
-				dlist_start = dlist_start->next;
-				printf("timer: delta list after timer expire\n");
-				dlist_print();
-			} else {
-				// reset timer
-				dlist_start->dtime = diff2;
-			}
-		}*/
+		// Update time after working
+		gettimeofday(now, NULL);
+		timersub(now, starttime, elapsed);
+		printf("timer: finished work after %ld.%06ld sec\n", elapsed->tv_sec,
+		       elapsed->tv_usec);
+		dlist_updateTime(elapsed);
 	}
 
 	return 0;
@@ -160,7 +180,7 @@ void recvMsg() {
 		}
 	}
 
-	printf("timer: delta list after start or cancel\n");
+	printf("timer: delta list after start or cancel:\n");
 	dlist_print();
 }
 
@@ -251,4 +271,17 @@ Dlist* dlist_remove(unsigned short port, uint32_t seqnum) {
 	}
 
 	return ptr;
+}
+
+void dlist_updateTime(struct timeval *elapsed) {
+	if (dlist_start == NULL)
+		return;
+	timersub(dlist_start->dtime, elapsed, dlist_start->dtime);
+	printf("timer: new head time: %ld.%06ld\n", dlist_start->dtime->tv_sec,
+	       dlist_start->dtime->tv_usec);
+	// Prevent negative values
+	if (dlist_start->dtime->tv_sec < 0 || dlist_start->dtime->tv_usec < 0) {
+		dlist_start->dtime->tv_sec = 0;
+		dlist_start->dtime->tv_usec = 0;
+	}
 }
