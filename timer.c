@@ -35,35 +35,7 @@ Dlist *dlist_start = NULL;
 
 void recvMsg();
 void dlist_print();
-
-// Following is taken from gnu.org
-/* Subtract the `struct timeval' values X and Y,
-   storing the result in RESULT.
-   Return 1 if the difference is negative, otherwise 0. */
-int
-timeval_subtract (result, x, y)
-	struct timeval *result, *x, *y;
-{
-	/* Perform the carry for the later subtraction by updating y. */
-	if (x->tv_usec < y->tv_usec) {
-		int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
-		y->tv_usec -= 1000000 * nsec;
-		y->tv_sec += nsec;
-	}
-	if (x->tv_usec - y->tv_usec > 1000000) {
-		int nsec = (x->tv_usec - y->tv_usec) / 1000000;
-		y->tv_usec += 1000000 * nsec;
-		y->tv_sec -= nsec;
-	}
-
-	/* Compute the time remaining to wait.
-	  tv_usec is certainly positive. */
-	result->tv_sec = x->tv_sec - y->tv_sec;
-	result->tv_usec = x->tv_usec - y->tv_usec;
-
-	/* Return 1 if result is negative. */
-	return x->tv_sec < y->tv_sec;
-}
+void dlist_insert(Dlist *item);
 
 int main(int argc, char *argv[]) {
 	fd_set readfds;
@@ -92,16 +64,16 @@ int main(int argc, char *argv[]) {
 		FD_SET(socklisten, &readfds);
 
 		// Set timer
-		if (dlist_start != NULL) {
+		/*if (dlist_start != NULL) {
 			timer = malloc(sizeof(struct timeval));
 			timer->tv_sec = dlist_start->dtime->tv_sec;
 			timer->tv_usec = dlist_start->dtime->tv_usec;
 			printf("timer: should wake up in %ld.%06ld sec\n", timer->tv_sec,
 			       timer->tv_usec);
-		} else {
+		} else {*/
 			timer = NULL;
-		}
-		gettimeofday(starttime, NULL);
+		/*}
+		gettimeofday(starttime, NULL);*/
 
 		// Block until input on a socket
 
@@ -116,14 +88,14 @@ int main(int argc, char *argv[]) {
 		}
 
 		// Check time
-		gettimeofday(now, NULL);
+		/*gettimeofday(now, NULL);
 		timeval_subtract(diff, now, starttime);
 		printf("timer: woke up after %ld.%06ld sec\n", diff->tv_sec,
 		       diff->tv_usec);
 		printf("timer: starttime: %ld.%06ld sec\n", starttime->tv_sec,
 		       starttime->tv_usec);
-		printf("timer: now: %ld.%06ld sec\n", now->tv_sec, now->tv_usec);
-		if (timer != NULL) {
+		printf("timer: now: %ld.%06ld sec\n", now->tv_sec, now->tv_usec);*/
+		/*if (timer != NULL) {
 			int neg = timeval_subtract(diff2, dlist_start->dtime, diff);
 			printf("timer: neg:%d diff:%ld.%06ld\n", neg, diff2->tv_sec,
 			       diff2->tv_usec);
@@ -136,7 +108,7 @@ int main(int argc, char *argv[]) {
 				// reset timer
 				dlist_start->dtime = diff2;
 			}
-		}
+		}*/
 	}
 
 	return 0;
@@ -173,8 +145,7 @@ void recvMsg() {
 		item->dtime->tv_sec = be64toh(sec);
 		item->dtime->tv_usec = be64toh(usec);
 		item->seqnum = ntohl(seqnum);
-		item->next = dlist_start;
-		dlist_start = item;
+		dlist_insert(item);
 	} else {
 		// Cancel timer
 		printf("timer: Canceling for seqnum %u\n", ntohl(seqnum));
@@ -194,4 +165,49 @@ void dlist_print() {
 		ptr = ptr->next;
 	}
 	printf("--END CURRENT DELTA LIST--\n");
+}
+
+void dlist_insert(Dlist *item) {
+	// Easy if list is empty
+	if (dlist_start == NULL) {
+		dlist_start = item;
+		return;
+	}
+
+	Dlist *right = dlist_start;
+	Dlist *left = NULL;
+	struct timeval *total_left, *total_right, *new;
+
+	total_left = malloc(sizeof(struct timeval));
+	total_left->tv_sec = total_left->tv_usec = 0;
+	total_right = malloc(sizeof(struct timeval));
+	total_right->tv_sec = right->dtime->tv_sec;
+	total_right->tv_usec = right->dtime->tv_usec;
+
+	// Find correct position to insert
+	while (timercmp(item->dtime, total_right, >)) {
+		timeradd(total_left, right->dtime, total_left);
+		left = right;
+		right = left->next;
+		if (right == NULL) break;
+		timeradd(total_right, right->dtime, total_right);
+	}
+
+	// Update times
+	new = malloc(sizeof(struct timeval));
+	timersub(item->dtime, total_left, new);
+	if (right != NULL)
+		timersub(total_right, item->dtime, right->dtime);
+	item->dtime = new;
+
+	// Insert
+	if (left == NULL) {
+		// Inserting at beginning
+		item->next = dlist_start;
+		dlist_start = item;
+	} else {
+		// Insert between left and right
+		left->next = item;
+		item->next = right;
+	}
 }
