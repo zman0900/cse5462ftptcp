@@ -277,11 +277,11 @@ void dlist_updateTime(struct timeval *elapsed) {
 	if (dlist_start == NULL)
 		return;
 	timersub(dlist_start->dtime, elapsed, dlist_start->dtime);
-	printf("timer: new head time: %ld.%06ld\n", dlist_start->dtime->tv_sec,
-	       dlist_start->dtime->tv_usec);
 	// Prevent negative values
 	if (dlist_start->dtime->tv_sec < 0 || dlist_start->dtime->tv_usec < 0) {
 		dlist_start->dtime->tv_sec = 0;
 		dlist_start->dtime->tv_usec = 0;
 	}
+	printf("timer: new head time: %ld.%06ld\n", dlist_start->dtime->tv_sec,
+	       dlist_start->dtime->tv_usec);
 }
