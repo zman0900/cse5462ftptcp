@@ -34,6 +34,7 @@ int socklisten;
 Dlist *dlist_start = NULL;
 
 void recvMsg();
+void dlist_print();
 
 // Following is taken from gnu.org
 /* Subtract the `struct timeval' values X and Y,
@@ -129,6 +130,8 @@ int main(int argc, char *argv[]) {
 			if (neg || (diff2->tv_sec == 0 && diff2->tv_usec < 100)) {
 				// Timer expired for first list item
 				dlist_start = dlist_start->next;
+				printf("timer: delta list after timer expire\n");
+				dlist_print();
 			} else {
 				// reset timer
 				dlist_start->dtime = diff2;
@@ -176,4 +179,19 @@ void recvMsg() {
 		// Cancel timer
 		printf("timer: Canceling for seqnum %u\n", ntohl(seqnum));
 	}
+
+	printf("timer: delta list after start or cancel\n");
+	dlist_print();
+}
+
+void dlist_print() {
+	printf("--BEGIN CURRENT DELTA LIST--\n");
+	Dlist *ptr = dlist_start;
+	while (ptr != NULL) {
+		printf("port:%u seqnum:%u time:%ld.%06ld\n",
+		       ntohs(ptr->client->sin_port), ptr->seqnum,
+		       ptr->dtime->tv_sec, ptr->dtime->tv_usec);
+		ptr = ptr->next;
+	}
+	printf("--END CURRENT DELTA LIST--\n");
 }
