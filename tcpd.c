@@ -46,12 +46,17 @@ uint32_t win_start = 0;
 uint32_t send_next = 0; // Not used for receiving
 uint32_t data_end = 0;  // Not used for receiving
 
+// Temp storage for incoming data from client until buffer space is available
+char tempBuf[MSS];
+int tempBufSize;
+
 // Functions
 void bindLocal();
 void bindListen();
 void listenToPorts();
 void preExit();
 void recvClientMsg();
+void storeInBufferAndAckClient(char *buf, int len);
 void recvTcpMsg();
 void sendToClient();
 void sendToTroll();
@@ -207,18 +212,21 @@ void recvClientMsg() {
 	}
 	printf("tcpd: ClientMsg: Received %d bytes\n", bytes);
 
-	// Store data in circular buffer
-	// TODO: don't overwrite still needed data
-	int insert = data_end % BUFFER_SIZE;
-	int copyToEnd = MIN(bytes, BUFFER_SIZE - insert);
-	printf("tcpd: inserting at %d\n", insert);
-	memcpy(buffer+insert, recvBuf, copyToEnd);
-	if (copyToEnd < bytes) {
-		// Wrap around to beginning
-		printf("tcpd: wrap around %d bytes\n", bytes-copyToEnd);
-		memcpy(buffer, recvBuf+copyToEnd, bytes-copyToEnd);
+	// Check space
+	int available;
+	if (data_end >= win_start) {
+		available = (win_start + BUFFER_SIZE) - data_end;
+	} else {
+		available = win_start - data_end;
 	}
-	data_end += bytes;
+
+	// Handle case of not enough space
+	if (available < bytes) {
+		printf("tcpd: Buffer full!\n");
+		memcpy(tempBuf, recvBuf, bytes);
+		tempBufSize = bytes;
+		return;  // TODO: this probably isn't finished
+	}
 
 // TODO: remove this (for project)
 	// delay sending ack so client slows down to avoid dropped packets
@@ -227,8 +235,8 @@ void recvClientMsg() {
 	tv.tv_usec = 50000;
 	select(0, NULL, NULL, NULL, &tv);
 
-	// Tell client data is stored
-	sendToClient(clientAck, clientAckLen);
+	// Store data in circular buffer
+	storeInBufferAndAckClient(recvBuf, bytes);
 
 	// Wrap with tcp
 	Header *h = tcpheader_create(listenport, rmttrollport, seqnum, 0, 0, 0, 0, 0,
@@ -238,6 +246,22 @@ void recvClientMsg() {
 
 	// Send to other tcpd through troll
 	sendToTroll(sendBuf, sendBufSize);
+}
+
+void storeInBufferAndAckClient(char *buf, int len) {
+	// Store data in circular buffer
+	int insert = data_end % BUFFER_SIZE;
+	int copyToEnd = MIN(len, BUFFER_SIZE - insert);
+	printf("tcpd: inserting at %d\n", insert);
+	memcpy(buffer+insert, buf, copyToEnd);
+	if (copyToEnd < len) {
+		// Wrap around to beginning
+		printf("tcpd: wrap around %d bytes\n", len-copyToEnd);
+		memcpy(buffer, buf+copyToEnd, len-copyToEnd);
+	}
+	data_end += len;
+	// Tell client data is stored
+	sendToClient(clientAck, clientAckLen);
 }
 
 void recvTcpMsg() {
