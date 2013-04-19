@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -23,6 +24,7 @@ typedef struct _sockinfo {
 char addrString[INET6_ADDRSTRLEN];
 sockinfo *si = NULL;
 int serverMode = 0;
+char clientAckBuf[CLIENT_ACK_MSG_LEN];
 
 //// PUBLIC FUNCTIONS ////
 
@@ -96,6 +98,8 @@ int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 }
 
 int ACCEPT(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
+	// TODO: Wait for packet from tcpd indicating data received
+
 	return 0; // TODO: Implement (for project)
 }
 
@@ -112,19 +116,39 @@ ssize_t SEND(int sockfd, const void *buf, size_t len, int flags) {
 	}
 
 	// Send all the bytes
-	if (sendAllTo(sockfd, buf, (int *)&len, si->tcpdaddr->ai_addr,
+	/*if (sendAllTo(sockfd, buf, (int *)&len, si->tcpdaddr->ai_addr,
 		           si->tcpdaddr->ai_addrlen) < 0) {
 		perror("tcpd_interface: SEND");
 		return -1;
+	}*/
+	int total = 0;
+	int bytesleft = len;
+	int n, bytes;
+	while (total < len) {
+		if ((n = sendto(sockfd, buf+total, bytesleft, 0, si->tcpdaddr->ai_addr,
+		                si->tcpdaddr->ai_addrlen)) < 0) {
+			perror("send");
+			break;
+		}
+		total += n;
+		bytesleft -= n;
+		// Wait for ack
+		if ((bytes = recvfrom(sockfd, clientAckBuf, CLIENT_ACK_MSG_LEN, 0,
+		                      si->tcpdaddr->ai_addr,
+			                  &(si->tcpdaddr->ai_addrlen))) < 0) {
+			perror("tcpd_interface: SEND (recv ack)");
+			return -1;
+		}
+		if (bytes != CLIENT_ACK_MSG_LEN
+		      || 0 != strcmp(CLIENT_ACK_MSG, clientAckBuf)) {
+			fprintf(stderr,
+			        "tcpd_interface: invalid packet received for client ack\n");
+			return -1;
+		}
+		printf("tcpd_interface: Client ack received\n");
 	}
 
 	printf("tcpd_interface: Sent %d bytes\n", (int)len);
-
-	// TODO: remove this (for project)
-	struct timeval tv;
-	tv.tv_sec = 0;
-	tv.tv_usec = 50000;
-	select(0, NULL, NULL, NULL, &tv);
 
 	return len;
 }

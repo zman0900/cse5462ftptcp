@@ -23,6 +23,10 @@ int trollport;      // Port our troll is listening on
 int rmttrollport;   // Port troll sends to on other tcpd
 char *remote_host;
 
+// Constants
+static const char *clientAck = CLIENT_ACK_MSG;
+static const int clientAckLen = CLIENT_ACK_MSG_LEN;
+
 // Globals
 int isClientSide;
 int socklocal, socklisten;
@@ -198,6 +202,18 @@ void recvClientMsg() {
 	}
 	printf("tcpd: ClientMsg: Received %d bytes\n", bytes);
 
+	// TODO: store data in circular buffer
+
+// TODO: remove this (for project)
+	// delay sending ack so client slows down to avoid dropped packets
+	struct timeval tv;
+	tv.tv_sec = 0;
+	tv.tv_usec = 50000;
+	select(0, NULL, NULL, NULL, &tv);
+
+	// Tell client data is stored
+	sendToClient(clientAck, clientAckLen);
+
 	// Wrap with tcp
 	Header *h = tcpheader_create(listenport, rmttrollport, seqnum, 0, 0, 0, 0, 0,
 	                             recvBuf, bytes, sendBuf); // TODO: fill in properly
@@ -205,7 +221,7 @@ void recvClientMsg() {
 	sendBufSize = TCP_HEADER_SIZE + bytes;
 
 	// Send to other tcpd through troll
-	sendToTroll();
+	sendToTroll(sendBuf, sendBufSize);
 }
 
 void recvTcpMsg() {
@@ -262,28 +278,28 @@ void recvTcpMsg() {
 	// Send data to client
 	sendBufSize = bytes - TCP_HEADER_SIZE;
 	memcpy(sendBuf, data, sendBufSize);
-	sendToClient();
+	sendToClient(sendBuf, sendBufSize);
 }
 
 // Expects sendBuf and sendBufSize to be prefilled
-void sendToClient() {
-	if (sendAllTo(socklocal, sendBuf, &sendBufSize, clientaddr->ai_addr,
+void sendToClient(char *buf, int bufLen) {
+	if (sendAllTo(socklocal, buf, &bufLen, clientaddr->ai_addr,
 		           clientaddr->ai_addrlen) < 0) {
 		perror("tcpd: sendto");
 		preExit();
 		exit(1);
 	}
-	printf("tcpd: ClientMsg: Sent %d bytes\n", sendBufSize);
+	printf("tcpd: ClientMsg: Sent %d bytes\n", bufLen);
 }
 
 // Expects sendBuf and sendBufSize to be prefilled
-void sendToTroll() {
-	uint16_t seqnum = ntohl(((Header *)sendBuf)->field.seqnum);
-	if (sendAllTo(socklocal, sendBuf, &sendBufSize, trolladdr->ai_addr,
+void sendToTroll(char *buf, int bufLen) {
+	uint16_t seqnum = ntohl(((Header *)buf)->field.seqnum);
+	if (sendAllTo(socklocal, buf, &bufLen, trolladdr->ai_addr,
 		           trolladdr->ai_addrlen) < 0) {
 		perror("tcpd: sendto");
 		preExit();
 		exit(1);
 	}
-	printf("tcpd: TcpMsg: Sent %d bytes, seq:%u\n", sendBufSize, seqnum);
+	printf("tcpd: TcpMsg: Sent %d bytes, seq:%u\n", bufLen, seqnum);
 }

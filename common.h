@@ -17,6 +17,9 @@
 #define TROLL_PORT_CLIENT 6665
 #define TIMER_PORT 6666
 
+#define CLIENT_ACK_MSG "ack"
+#define CLIENT_ACK_MSG_LEN 4
+
 /*
  * Returns bound socket, or negative on fail
  */
