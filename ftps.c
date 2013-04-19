@@ -135,6 +135,9 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 
+	// Accept - Block until connection
+	while (ACCEPT(sockfd, servinfo->ai_addr, &(servinfo->ai_addrlen)) != 0);
+
 	// Clean up
 	freeaddrinfo(servinfo);
 

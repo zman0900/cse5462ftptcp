@@ -17,7 +17,6 @@ typedef struct _sockinfo {
 	socklen_t addrlen;
 	int localport;
 	int tcpdport;
-	pid_t tcpd_pid;
 	struct addrinfo *tcpdaddr;
 } sockinfo;
 
@@ -98,9 +97,27 @@ int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 }
 
 int ACCEPT(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
-	// TODO: Wait for packet from tcpd indicating data received
+	// Wait for start
+	char clientStartBuf[CLIENT_START_MSG_LEN];
+	int bytes;
+	if ((bytes = recvfrom(sockfd, clientStartBuf, CLIENT_START_MSG_LEN, 0,
+	                      si->tcpdaddr->ai_addr,
+		                  &(si->tcpdaddr->ai_addrlen))) < 0) {
+		perror("tcpd_interface: ACCEPT");
+		return -1;
+	}
+	if (bytes != CLIENT_START_MSG_LEN
+	      || 0 != strcmp(CLIENT_START_MSG, clientStartBuf)) {
+		fprintf(stderr,
+		        "tcpd_interface: invalid packet received for client start\n");
+		return -1;
+	}
+	printf("tcpd_interface: Client start received\n");
 
-	return 0; // TODO: Implement (for project)
+	addr = si->addr;
+	addrlen = &(si->addrlen);
+
+	return 0;
 }
 
 int CONNECT(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {

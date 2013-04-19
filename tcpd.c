@@ -26,6 +26,8 @@ char *remote_host;
 // Constants
 static const char *clientAck = CLIENT_ACK_MSG;
 static const int clientAckLen = CLIENT_ACK_MSG_LEN;
+static const char *clientStart = CLIENT_START_MSG;
+static const int clientStartLen = CLIENT_START_MSG_LEN;
 
 // Globals
 int isClientSide;
@@ -261,6 +263,8 @@ void recvTcpMsg() {
 			strcpy(remote_host, addrString);
 			printf("tcpd: New connection open from %s, reply port %d\n",
 			        remote_host, rmttrollport);
+			// Unblock ACCEPT
+			sendToClient(clientStart, clientStartLen);
 		}
 		tcp_isConn = 1;
 	}

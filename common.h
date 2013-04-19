@@ -19,6 +19,8 @@
 
 #define CLIENT_ACK_MSG "ack"
 #define CLIENT_ACK_MSG_LEN 4
+#define CLIENT_START_MSG "start"
+#define CLIENT_START_MSG_LEN 6
 
 /*
  * Returns bound socket, or negative on fail
