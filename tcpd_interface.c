@@ -78,7 +78,7 @@ int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 	getInAddrString(addr->sa_family, (struct sockaddr *)addr, addrString,
 	                sizeof addrString);
 
-	// Fork tcpd using provided info
+	// Print port info
 	printf("tcpd_interface: Ports:\n\tlocal\t%d\n\ttcpd\t%d\n\tremote\t%d\n",
 	       si->localport, si->tcpdport, remoteport);
 

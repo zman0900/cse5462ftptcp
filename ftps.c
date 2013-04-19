@@ -87,7 +87,7 @@ void receiveFile(int connfd) {
 	       (fileSize/1000.0)/difftime(current, start));
 
 	fflush(file);
-	//fclose(file);  // This is causing a segfault now, but not in gdb...
+	fclose(file);
 	printf("ftps: Done\n");
 }
 

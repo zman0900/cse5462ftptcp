@@ -177,7 +177,7 @@ int main(int argc, char *argv[]) {
 	sendFile();
 
 	// Close connection
-	sleep(5); //make sure everything is done
+	//sleep(5); //make sure everything is done
 	CLOSE(sockfd);
 
 	return 0;
