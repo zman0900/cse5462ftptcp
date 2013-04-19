@@ -81,7 +81,7 @@ Header* tcpheader_create(uint16_t sport, uint16_t dport, uint32_t seqnum,
 	if (isAck) h->field.flags |= (1 << 4);
 	if (isSyn) h->field.flags |= (1 << 1);
 	if (isFin) h->field.flags |= 1;
-	h->field.winsize = htons(WINSIZE * MSS);
+	h->field.winsize = htons(WINSIZE);
 	h->field.checksum = 0;
 	h->field.urgptr = 0;
 	h->field.tsopt_kind = 8;

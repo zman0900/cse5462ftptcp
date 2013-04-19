@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -40,6 +41,10 @@ char addrString[INET6_ADDRSTRLEN];
 // TCP State
 int tcp_isConn = 0;
 uint32_t seqnum = 0;
+char buffer[BUFFER_SIZE];
+uint32_t win_start = 0;
+uint32_t send_next = 0; // Not used for receiving
+uint32_t data_end = 0;  // Not used for receiving
 
 // Functions
 void bindLocal();
@@ -204,7 +209,18 @@ void recvClientMsg() {
 	}
 	printf("tcpd: ClientMsg: Received %d bytes\n", bytes);
 
-	// TODO: store data in circular buffer
+	// Store data in circular buffer
+	// TODO: don't overwrite still needed data
+	int insert = data_end % BUFFER_SIZE;
+	int copyToEnd = MIN(bytes, BUFFER_SIZE - insert);
+	printf("tcpd: inserting at %d\n", insert);
+	memcpy(buffer+insert, recvBuf, copyToEnd);
+	if (copyToEnd < bytes) {
+		// Wrap around to beginning
+		printf("tcpd: wrap around %d bytes\n", bytes-copyToEnd);
+		memcpy(buffer, recvBuf+copyToEnd, bytes-copyToEnd);
+	}
+	data_end += bytes;
 
 // TODO: remove this (for project)
 	// delay sending ack so client slows down to avoid dropped packets

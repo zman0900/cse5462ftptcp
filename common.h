@@ -7,7 +7,8 @@
 
 #define FNAME_LEN 20
 #define MSS 1000 //bytes
-#define WINSIZE 20 //mss
+#define WINSIZE 20000 //bytes
+#define BUFFER_SIZE 64000 //bytes
 
 #define LOCAL_PORT_SERVER 6660
 #define LOCAL_PORT_CLIENT 6663

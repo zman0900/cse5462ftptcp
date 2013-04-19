@@ -184,7 +184,7 @@ ssize_t RECV(int sockfd, void *buf, size_t len, int flags) {
 		perror("tcpd_interface: RECV");
 		return -1;
 	}
-	printf("tcpd: ClientMsg: Received %d bytes\n", bytes);
+	printf("tcpd_interface: Received %d bytes\n", bytes);
 
 	return bytes;
 }
