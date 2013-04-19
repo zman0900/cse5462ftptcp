@@ -47,8 +47,8 @@ int BIND(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 	si->addrlen = addrlen;
 	// Choose ports for tcpd communication
 	int remoteport = ntohs(((struct sockaddr_in *)addr)->sin_port);
-	si->localport = serverMode ? LOCAL_PORT_SERVER : LOCAL_PORT_CLIENT;
-	si->tcpdport = serverMode ? TCPD_PORT_SERVER : TCPD_PORT_CLIENT;
+	si->localport = serverMode ? LOCAL_PORT_RECEIVER : LOCAL_PORT_SENDER;
+	si->tcpdport = serverMode ? TCPD_PORT_RECEIVER : TCPD_PORT_SENDER;
 
 	// Bind socket for communication with tcpd
 	char lp[6];

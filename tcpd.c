@@ -31,7 +31,7 @@ static const char *clientStart = CLIENT_START_MSG;
 static const int clientStartLen = CLIENT_START_MSG_LEN;
 
 // Globals
-int isClientSide;
+int isSenderSide;
 int socklocal, socklisten;
 struct addrinfo *trolladdr, *clientaddr;
 char recvBuf[TCP_HEADER_SIZE+MSS], sendBuf[TCP_HEADER_SIZE+MSS];
@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
 	if (argc < 2 || argc > 3) {
 		printf("Usage: %s <remote-port> ", argv[0]);
 		printf("[<remote-host>]\n\n");
-		printf("If remote-host is specified, will start as client and attempt ");
+		printf("If remote-host is specified, will start as sender and attempt ");
 		printf("connection to tcpd\nlistening on remote-host:remote-port.\n");
 		printf("Without remote-host, will listen on remote-port for ");
 		printf("connection from remote\ntroll.\n");
@@ -75,18 +75,16 @@ int main(int argc, char *argv[]) {
 		}
 		if (((struct sockaddr_in *)testrmt->ai_addr)->sin_addr.s_addr
 		     == htonl(INADDR_ANY)) {
-			argc = 2;  // Started with INADDR_ANY as arg, assume server side
+			argc = 2;  // Started with INADDR_ANY as arg, assume receiver side
 		}
 	}
 
-	// For either client or server side, trollport can be random since not used
-	// elsewhere
 	if (argc == 2) {
-		// Server side
-		isClientSide = 0;
-		clientport = LOCAL_PORT_SERVER;
-		localport = TCPD_PORT_SERVER;
-		trollport = TROLL_PORT_SERVER;
+		// Receiver side
+		isSenderSide = 0;
+		clientport = LOCAL_PORT_RECEIVER;
+		localport = TCPD_PORT_RECEIVER;
+		trollport = TROLL_PORT_RECEIVER;
 		// Listen on "remote-port"
 		listenport = atoi(argv[1]);
 		// Troll's remote port and host will be set later after receiving first
@@ -94,11 +92,11 @@ int main(int argc, char *argv[]) {
 		rmttrollport = -1;
 		remote_host = NULL;  // Also set later
 	} else {
-		// Client side
-		isClientSide = 1;
-		clientport = LOCAL_PORT_CLIENT;
-		localport = TCPD_PORT_CLIENT;
-		trollport = TROLL_PORT_CLIENT;
+		// Sender side
+		isSenderSide = 1;
+		clientport = LOCAL_PORT_SENDER;
+		localport = TCPD_PORT_SENDER;
+		trollport = TROLL_PORT_SENDER;
 		// Listen on 1 + remote port, put that in tcp source field
 		// Troll's remote port will be "remote-port"
 		rmttrollport = atoi(argv[1]);
@@ -267,8 +265,8 @@ void recvTcpMsg() {
 
 	// If this is a new connection
 	if (!tcp_isConn) {
-		// Figure out where to send replys to if server side
-		if (!isClientSide) {
+		// Figure out where to send replys to if receiver side
+		if (!isSenderSide) {
 			// Set up some address info
 			getInAddrString(senderaddr.sin_family,
 			                (struct sockaddr *)&senderaddr, addrString,
@@ -289,7 +287,7 @@ void recvTcpMsg() {
 	if (tcpheader_isfin(h)) {
 		printf("tcpd: Got FIN packet\n");
 		tcp_isConn = 0;
-		if (!isClientSide) {
+		if (!isSenderSide) {
 			free(remote_host);
 			rmttrollport = -1;
 		}
