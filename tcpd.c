@@ -347,7 +347,13 @@ void sendNextTcpPacket() {
 		// no data in buffer
 		return;
 	}
-	int pktSize = MIN(MSS, data_end - send_next);
+	int rwin_used = pktinfo_length();
+	int pktSize = data_end - send_next;
+	pktSize = MIN(MSS, pktSize);
+	// Don't send more than rwin
+	pktSize = MIN(WINSIZE - rwin_used, pktSize);
+	if (pktSize <= 0) return;
+	// Actually send
 	sendTcpPacket(send_next, pktSize);
 
 	// Increment seqnum

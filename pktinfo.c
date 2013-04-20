@@ -4,7 +4,8 @@
 
 PktInfo *start = NULL;
 PktInfo *end = NULL;
-int size = 0;
+int num = 0;
+int len = 0;
 
 PktInfo* _pktinfo_find(uint32_t seqnum) {
 	PktInfo *cur = start;
@@ -29,7 +30,8 @@ void pktinfo_add(uint32_t seqnum, int length) {
 		insert->prev = end;
 		end = insert;
 	}
-	++size;
+	++num;
+	len += length;
 }
 
 int pktinfo_get(uint32_t seqnum) {
@@ -48,10 +50,15 @@ int pktinfo_remove(uint32_t seqnum) {
 	if (cur == start) start = cur->next;
 	if (cur == end) end = cur->prev;
 	free(cur);
-	--size;
+	--num;
+	len -= ret;
 	return ret;
 }
 
-int pktinfo_size() {
-	return size;
+int pktinfo_number() {
+	return num;
+}
+
+int pktinfo_length() {
+	return len;
 }
