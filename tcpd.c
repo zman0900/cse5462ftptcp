@@ -58,6 +58,7 @@ void preExit();
 void recvClientMsg();
 void storeInBufferAndAckClient(char *buf, int len);
 void recvTcpMsg();
+void sendTcpMsg();
 void sendToClient();
 void sendToTroll();
 
@@ -193,6 +194,17 @@ void listenToPorts() {
 			printf("tcpd: select got msg from tcpd\n");
 			recvTcpMsg();
 		}
+
+		// Send data
+		if (isSenderSide) {
+			// Send tcp packets if data available and space in rwin
+			sendTcpMsg();
+			// Put possible pending data in buffer and unblock SEND
+			
+		} else {
+			// Send available data to client
+			
+		}
 	}
 }
 
@@ -237,15 +249,6 @@ void recvClientMsg() {
 
 	// Store data in circular buffer
 	storeInBufferAndAckClient(recvBuf, bytes);
-
-	// Wrap with tcp
-	Header *h = tcpheader_create(listenport, rmttrollport, seqnum, 0, 0, 0, 0, 0,
-	                             recvBuf, bytes, sendBuf); // TODO: fill in properly
-	seqnum += bytes;
-	sendBufSize = TCP_HEADER_SIZE + bytes;
-
-	// Send to other tcpd through troll
-	sendToTroll(sendBuf, sendBufSize);
 }
 
 void storeInBufferAndAckClient(char *buf, int len) {
@@ -323,7 +326,36 @@ void recvTcpMsg() {
 	sendToClient(sendBuf, sendBufSize);
 }
 
-// Expects sendBuf and sendBufSize to be prefilled
+void sendTcpMsg() {
+	if (data_end <= send_next) {
+		// no data in buffer
+		return;
+	}
+	int pktSize = MIN(MSS, data_end - send_next);
+	int send_pos = send_next % BUFFER_SIZE;
+	char *packetData;
+	if (send_pos + pktSize > BUFFER_SIZE) {
+		// Packet wraps around end of buffer
+		int first = (send_pos + pktSize) - BUFFER_SIZE;
+		int second = pktSize - first;
+		// Using recvBuf as temp storage
+		memcpy(recvBuf, buffer+send_pos, first);
+		memcpy(recvBuf+first, buffer, second);
+		packetData = recvBuf;
+	} else {
+		packetData = buffer+send_pos;
+	}
+
+	// Add tcp header
+	// TODO: fill in properly
+	Header *h = tcpheader_create(listenport, rmttrollport, data_end, 0, 0, 0,
+	                             0, 0, packetData, pktSize, sendBuf);
+	send_next += pktSize;
+
+	// Send to other tcpd through troll
+	sendToTroll(sendBuf, TCP_HEADER_SIZE + pktSize);
+}
+
 void sendToClient(char *buf, int bufLen) {
 	if (sendAllTo(socklocal, buf, &bufLen, clientaddr->ai_addr,
 		           clientaddr->ai_addrlen) < 0) {
@@ -334,7 +366,6 @@ void sendToClient(char *buf, int bufLen) {
 	printf("tcpd: ClientMsg: Sent %d bytes\n", bufLen);
 }
 
-// Expects sendBuf and sendBufSize to be prefilled
 void sendToTroll(char *buf, int bufLen) {
 	uint16_t seqnum = ntohl(((Header *)buf)->field.seqnum);
 	if (sendAllTo(socklocal, buf, &bufLen, trolladdr->ai_addr,
