@@ -1,5 +1,4 @@
 #include <arpa/inet.h>
-#include <assert.h>
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -57,10 +56,12 @@ void bindListen();
 void listenToPorts();
 void preExit();
 void recvClientMsg();
-void storeInBufferAndAckClient(char *buf, int len);
+void storeInSendBufferAndAckClient(char *buf, int len);
 void recvTcpMsg();
+void storeInRecvBuffer(char *buf, int len, uint32_t seqnum);
 void sendNextTcpPacket();
 void sendTcpPacket(uint32_t seqnum, int pktSize);
+void sendTcpAck(uint32_t seqnum);
 void timerExpired();
 void sendToClient();
 void sendToTroll();
@@ -121,7 +122,6 @@ int main(int argc, char *argv[]) {
 			exit(1);
 		}
 	}
-	// Generate trollport without collsion
 
 	// Print selected ports
 	printf("tcpd: Ports:\n\tclient\t%d\n\tlocal\t%d\n\tlisten\t%d\n\ttroll\t%d\
@@ -215,10 +215,8 @@ void listenToPorts() {
 		if (isSenderSide) {
 			// Send tcp packets if data available and space in rwin
 			sendNextTcpPacket();
-			// Put possible pending data in buffer and unblock SEND
-			
 		} else {
-			// Send available data to client
+			// TODO: Send available data to client
 			
 		}
 	}
@@ -264,10 +262,10 @@ void recvClientMsg() {
 	select(0, NULL, NULL, NULL, &tv);
 
 	// Store data in circular buffer
-	storeInBufferAndAckClient(recvBuf, bytes);
+	storeInSendBufferAndAckClient(recvBuf, bytes);
 }
 
-void storeInBufferAndAckClient(char *buf, int len) {
+void storeInSendBufferAndAckClient(char *buf, int len) {
 	// Store data in circular buffer
 	int insert = data_end % BUFFER_SIZE;
 	int copyToEnd = MIN(len, BUFFER_SIZE - insert);
@@ -293,15 +291,16 @@ void recvTcpMsg() {
 		preExit();
 		exit(1);
 	}
-	printf("tcpd: TcpMsg: Received %d bytes\n", bytes);
+	printf("tcpd: TcpMsg: Received %d bytes\n", bytes-TCP_HEADER_SIZE);
 	Header *h = (Header *)recvBuf;
 
 	// Verify checksum
 	if (!tcpheader_verifycrc(recvBuf, bytes)) {
-		printf("tcpd: CHECKSUM FAILED! seq:%u\n", ntohl(h->field.seqnum));
-	} else {
-		printf("tcpd: Checksum OK seq:%u\n", ntohl(h->field.seqnum));
+		printf("tcpd: CHECKSUM FAILED! seq:%u DROPPED\n",
+		       ntohl(h->field.seqnum));
+		return; // Drop it
 	}
+	printf("tcpd: Checksum OK seq:%u\n", ntohl(h->field.seqnum));
 
 	// Unwrap tcp
 	char *data = recvBuf+TCP_HEADER_SIZE;
@@ -334,12 +333,81 @@ void recvTcpMsg() {
 			free(remote_host);
 			rmttrollport = -1;
 		}
+		// TODO: Send ACK for FIN
+	} else if (tcpheader_isack(h)) {
+		// TODO: Sender: Move send window
+		
+		// TODO: Put possible pending data in buffer and unblock SEND
+		
+	} else {
+		// TODO: Receiver: Store data in buffer
+		storeInRecvBuffer(data, bytes-TCP_HEADER_SIZE, ntohl(h->field.seqnum));
+		// Send data to client TODO: remove this
+		/*sendBufSize = bytes - TCP_HEADER_SIZE;
+		memcpy(sendBuf, data, sendBufSize);
+		sendToClient(sendBuf, sendBufSize);*/
+	}
+}
+
+void storeInRecvBuffer(char *buf, int len, uint32_t seqnum) {
+	if (seqnum < win_start) {
+		// Already ACK'd, must be duplicate, drop
+		printf("tcpd: Already ACK'd duplicate received.\n");
+		// ACK again to prevent more retransmissions
+		sendTcpAck(seqnum);
+		return;
+	}
+	if (seqnum+len > win_start+WINSIZE) {
+		// Outside rwin, drop
+		printf("tcpd: PACKET IS OUTSIDE RWIN, DROPPING\n");
+		return;
+	}
+	if ((data_end >= send_next && seqnum+len > send_next+BUFFER_SIZE)
+	           || (data_end < send_next && seqnum+len > send_next)) {
+		// Would overwrite data not send to client yet, drop
+		printf("tcpd: PACKET DROPPED FOR LACK OF SPACE\n");
+		return;
 	}
 
-	// Send data to client
-	sendBufSize = bytes - TCP_HEADER_SIZE;
-	memcpy(sendBuf, data, sendBufSize);
-	sendToClient(sendBuf, sendBufSize);
+	int inOrder = 0;
+	if (seqnum == data_end) {
+		inOrder = 1;
+	} else if (seqnum > data_end) {
+		printf("tcpd: PACKET IS EARLY\n");
+	} else {
+		printf("tcpd: DUPLICATE UN-ACKd PACKET!\n");
+	}
+	// Insert packet
+	int win_pos = seqnum % BUFFER_SIZE;
+	int first = MIN(BUFFER_SIZE - win_pos, len);
+	int second = len - first;
+	printf("tcpd: inserting at %d\n", win_pos);
+	memcpy(buffer+win_pos, buf, first);
+	if (second > 0) {
+		// Wraps around
+		printf("tcpd: wrap around %d bytes\n", second);
+		memcpy(buffer, buf+first, second);
+	}
+	if (inOrder) {
+		data_end += len;
+		// Check if this packet filled a gap
+		int add = 0;
+		int tmp = pktinfo_remove(seqnum+len);
+		while (tmp != -1) {
+			add += tmp;
+			tmp = pktinfo_remove(seqnum+len+add);
+		}
+		data_end += add;
+		if (add != 0) {
+			printf("tcpd: moved data_end forward by %d\n", add);
+		}
+	} else {
+		// Put in outstanding packets list
+		pktinfo_add(seqnum, len);
+	}
+
+	// Send ACK
+	sendTcpAck(seqnum);
 }
 
 void sendNextTcpPacket() {
@@ -378,8 +446,8 @@ void sendTcpPacket(uint32_t seqnum, int pktSize) {
 
 	// Add tcp header
 	// TODO: fill in properly
-	Header *h = tcpheader_create(listenport, rmttrollport, seqnum, 0, 0, 0,
-	                             0, 0, packetData, pktSize, sendBuf);
+	/*Header *h = */tcpheader_create(listenport, rmttrollport, seqnum, 0, 0, 0,
+	                                 0, 0, packetData, pktSize, sendBuf);
 
 	// Prepare timer
 	struct timeval *timer = malloc(sizeof(struct timeval));
@@ -397,6 +465,11 @@ void sendTcpPacket(uint32_t seqnum, int pktSize) {
 		fprintf(stderr, "timer-test: Failed to start timer 1\n");
 	}
 	free(timer);
+}
+
+void sendTcpAck(uint32_t seqnum) {
+	// TODO: this
+	printf("tcpd: Would ACK seqnum: %d\n", seqnum);
 }
 
 void timerExpired() {
