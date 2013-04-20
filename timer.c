@@ -117,7 +117,8 @@ int main(int argc, char *argv[]) {
 					       ntohs(dlist_start->client->sin_port),
 					       dlist_start->seqnum);
 					// Send message
-					if (sendto(socklisten, &(dlist_start->seqnum), 4, 0, 
+					uint32_t seqnum = htonl(dlist_start->seqnum);
+					if (sendto(socklisten, &seqnum, 4, 0, 
 					       (struct sockaddr *)(dlist_start->client),
 					       sizeof *(dlist_start->client)) < 0) {
 						perror("timer: sendto");

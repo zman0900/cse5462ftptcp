@@ -69,5 +69,5 @@ uint32_t timer_getExpired(const int socket) {
 	      &(timeraddr->ai_addrlen)) != 4) {
 		fprintf(stderr, "timer_interface: Invalid response from timer!\n");
 	}
-	return seqnum;
+	return ntohl(seqnum);
 }
