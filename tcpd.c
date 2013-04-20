@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <assert.h>
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -13,6 +14,7 @@
 #include <unistd.h>
 
 #include "common.h"
+#include "pktinfo.h"
 #include "tcpheader.h"
 #include "timer_interface.h"
 
@@ -40,7 +42,6 @@ char addrString[INET6_ADDRSTRLEN];
 
 // TCP State
 int tcp_isConn = 0;
-uint32_t seqnum = 0;
 char buffer[BUFFER_SIZE];
 uint32_t win_start = 0;
 uint32_t send_next = 0; // Not used for receiving
@@ -58,7 +59,8 @@ void preExit();
 void recvClientMsg();
 void storeInBufferAndAckClient(char *buf, int len);
 void recvTcpMsg();
-void sendTcpMsg();
+void sendNextTcpPacket();
+void sendTcpPacket(uint32_t seqnum, int pktSize);
 void timerExpired();
 void sendToClient();
 void sendToTroll();
@@ -212,7 +214,7 @@ void listenToPorts() {
 		// Send data
 		if (isSenderSide) {
 			// Send tcp packets if data available and space in rwin
-			sendTcpMsg();
+			sendNextTcpPacket();
 			// Put possible pending data in buffer and unblock SEND
 			
 		} else {
@@ -340,13 +342,21 @@ void recvTcpMsg() {
 	sendToClient(sendBuf, sendBufSize);
 }
 
-void sendTcpMsg() {
+void sendNextTcpPacket() {
 	if (data_end <= send_next) {
 		// no data in buffer
 		return;
 	}
 	int pktSize = MIN(MSS, data_end - send_next);
-	int send_pos = send_next % BUFFER_SIZE;
+	sendTcpPacket(send_next, pktSize);
+
+	// Increment seqnum
+	send_next += pktSize;
+	printf("tcpd: send_next is now %d\n", send_next);
+}
+
+void sendTcpPacket(uint32_t seqnum, int pktSize) {
+	int send_pos = seqnum % BUFFER_SIZE;
 	char *packetData;
 	if (send_pos + pktSize > BUFFER_SIZE) {
 		// Packet wraps around end of buffer
@@ -362,7 +372,7 @@ void sendTcpMsg() {
 
 	// Add tcp header
 	// TODO: fill in properly
-	Header *h = tcpheader_create(listenport, rmttrollport, send_next, 0, 0, 0,
+	Header *h = tcpheader_create(listenport, rmttrollport, seqnum, 0, 0, 0,
 	                             0, 0, packetData, pktSize, sendBuf);
 
 	// Prepare timer
@@ -370,23 +380,29 @@ void sendTcpMsg() {
 	timer->tv_sec = 10;  //TODO: fill in with correct RTO
 	timer->tv_usec = 0;
 
+	// Keep packet lenght until ack'd incase needed for retransmission
+	pktinfo_add(seqnum, pktSize);
+
 	// Send to other tcpd through troll
 	sendToTroll(sendBuf, TCP_HEADER_SIZE + pktSize);
 
 	// Start timer
-	if (timer_start(socktimer, timer, send_next) < 0) {
+	if (timer_start(socktimer, timer, seqnum) < 0) {
 		fprintf(stderr, "timer-test: Failed to start timer 1\n");
 	}
 	free(timer);
-
-	// Increment seqnum
-	send_next += pktSize;
-	printf("tcpd: send_next is now %d\n", send_next);
 }
 
 void timerExpired() {
 	uint32_t seqnum = timer_getExpired(socktimer);
 	printf("tcpd: Need to retransmit seqnum %d...\n", seqnum);
+	int len = pktinfo_remove(seqnum);
+	if (len < 0) {
+		fprintf(stderr, "tcpd: Retransmit needed for packet not in buffer!\n");
+		preExit();
+		exit(1);
+	}
+	sendTcpPacket(seqnum, len);
 }
 
 void sendToClient(char *buf, int bufLen) {

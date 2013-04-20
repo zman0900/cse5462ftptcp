@@ -5,7 +5,7 @@ TARGET2 = ftpc
 SRCS2 = ftpc.c common.c tcpd_interface.c
 
 TARGET3 = tcpd
-SRCS3 = tcpd.c common.c tcpheader.c timer_interface.c
+SRCS3 = tcpd.c common.c pktinfo.c tcpheader.c timer_interface.c
 
 TARGET4 = timer
 SRCS4 = timer.c common.c
