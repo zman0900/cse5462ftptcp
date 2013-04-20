@@ -348,9 +348,10 @@ void sendTcpMsg() {
 
 	// Add tcp header
 	// TODO: fill in properly
-	Header *h = tcpheader_create(listenport, rmttrollport, data_end, 0, 0, 0,
+	Header *h = tcpheader_create(listenport, rmttrollport, send_next, 0, 0, 0,
 	                             0, 0, packetData, pktSize, sendBuf);
 	send_next += pktSize;
+	printf("tcpd: send_next is now %d\n", send_next);
 
 	// Send to other tcpd through troll
 	sendToTroll(sendBuf, TCP_HEADER_SIZE + pktSize);
