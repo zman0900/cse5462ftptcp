@@ -62,3 +62,12 @@ int timer_cancel(const int socket, const uint32_t _seqnum) {
 
 	return 0;
 }
+
+uint32_t timer_getExpired(const int socket) {
+	uint32_t seqnum;
+	if (recvfrom(socket, &seqnum, 4, 0, timeraddr->ai_addr,
+	      &(timeraddr->ai_addrlen)) != 4) {
+		fprintf(stderr, "timer_interface: Invalid response from timer!\n");
+	}
+	return seqnum;
+}

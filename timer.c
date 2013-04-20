@@ -14,11 +14,16 @@
 #define PACKET_SIZE 21
 
 /*
- * PACKET FORMAT (total 21 bytes, all unsigned)
+ * INPUT PACKET FORMAT (total 21 bytes, all unsigned)
  * time in seconds (8 bytes)
  * additional time in microseconds (8 bytes)
  * sequence number (4 bytes)
  * start(1)/cancel(0) (1 byte)
+ */
+
+/*
+ * OUTPUT PACKET FORMAT (total 4 bytes, all unsigned)
+ * sequence number (4 bytes)
  */
 
 typedef struct Dlist Dlist;
@@ -108,10 +113,15 @@ int main(int argc, char *argv[]) {
 				if (dlist_start->dtime->tv_sec <= 0
 				       && dlist_start->dtime->tv_usec <= 0) {
 					// Timer expired
-					//TODO: Send response message
 					printf("timer: TIMER EXPIRED port:%u seqnum:%u\n",
 					       ntohs(dlist_start->client->sin_port),
 					       dlist_start->seqnum);
+					// Send message
+					if (sendto(socklisten, &(dlist_start->seqnum), 4, 0, 
+					       (struct sockaddr *)(dlist_start->client),
+					       sizeof *(dlist_start->client)) < 0) {
+						perror("timer: sendto");
+					}
 					// Remove item
 					Dlist *tmp = dlist_start;
 					dlist_start = tmp->next;

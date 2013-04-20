@@ -32,7 +32,7 @@ static const int clientStartLen = CLIENT_START_MSG_LEN;
 
 // Globals
 int isSenderSide;
-int socklocal, socklisten;
+int socklocal, socklisten, socktimer;
 struct addrinfo *trolladdr, *clientaddr;
 char recvBuf[TCP_HEADER_SIZE+MSS], sendBuf[TCP_HEADER_SIZE+MSS];
 int sendBufSize;
@@ -59,6 +59,7 @@ void recvClientMsg();
 void storeInBufferAndAckClient(char *buf, int len);
 void recvTcpMsg();
 void sendTcpMsg();
+void timerExpired();
 void sendToClient();
 void sendToTroll();
 
@@ -108,6 +109,15 @@ int main(int argc, char *argv[]) {
 		rmttrollport = atoi(argv[1]);
 		remote_host = argv[2];
 		listenport = 1 + rmttrollport;
+		// Set up timer
+		char p[6];
+		sprintf(p, "%d", randomPort());
+		socktimer = bindUdpSocket(NULL, p);
+		if (socktimer <= 0) {
+			fprintf(stderr, "timer-test: bind port failed\n");
+			preExit();
+			exit(1);
+		}
 	}
 	// Generate trollport without collsion
 
@@ -175,6 +185,7 @@ void listenToPorts() {
 		FD_ZERO(&readfds);
 		FD_SET(socklocal, &readfds);
 		FD_SET(socklisten, &readfds);
+		if (isSenderSide) FD_SET(socktimer, &readfds);
 
 		// Block until input on a socket
 		if (select(FD_SETSIZE, &readfds, NULL, NULL, NULL) < 0) {
@@ -182,16 +193,19 @@ void listenToPorts() {
 			preExit();
 			exit(1);
 		}
+		printf("tcpd: woke up from select\n");
+
+		if (isSenderSide && FD_ISSET(socktimer, &readfds)) {
+			timerExpired();
+		}
 
 		if (FD_ISSET(socklocal, &readfds)) {
 			// Msg from client
-			printf("tcpd: select got msg from client\n");
 			recvClientMsg();
 		}
 
 		if (FD_ISSET(socklisten, &readfds)) {
 			// Msg from other tcpd
-			printf("tcpd: select got msg from tcpd\n");
 			recvTcpMsg();
 		}
 
@@ -350,11 +364,29 @@ void sendTcpMsg() {
 	// TODO: fill in properly
 	Header *h = tcpheader_create(listenport, rmttrollport, send_next, 0, 0, 0,
 	                             0, 0, packetData, pktSize, sendBuf);
-	send_next += pktSize;
-	printf("tcpd: send_next is now %d\n", send_next);
+
+	// Prepare timer
+	struct timeval *timer = malloc(sizeof(struct timeval));
+	timer->tv_sec = 10;  //TODO: fill in with correct RTO
+	timer->tv_usec = 0;
 
 	// Send to other tcpd through troll
 	sendToTroll(sendBuf, TCP_HEADER_SIZE + pktSize);
+
+	// Start timer
+	if (timer_start(socktimer, timer, send_next) < 0) {
+		fprintf(stderr, "timer-test: Failed to start timer 1\n");
+	}
+	free(timer);
+
+	// Increment seqnum
+	send_next += pktSize;
+	printf("tcpd: send_next is now %d\n", send_next);
+}
+
+void timerExpired() {
+	uint32_t seqnum = timer_getExpired(socktimer);
+	printf("tcpd: Need to retransmit seqnum %d...\n", seqnum);
 }
 
 void sendToClient(char *buf, int bufLen) {

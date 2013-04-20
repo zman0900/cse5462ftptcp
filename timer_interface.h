@@ -10,5 +10,8 @@
 int timer_start(const int socket, const struct timeval * const time,
                 const uint32_t seqnum);
 int timer_cancel(const int socket, const uint32_t seqnum);
+// Queries timer process for seqnum of expired timer
+// Only call if data is waiting on socket
+uint32_t timer_getExpired(const int socket);
 
 #endif
