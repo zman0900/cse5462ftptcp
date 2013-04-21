@@ -72,6 +72,7 @@ void sendNextTcpPacket();
 void sendTcpPacket(uint32_t seqnum, int pktSize);
 void sendTcpAck(uint32_t acknum, uint32_t tsecr);
 void timerExpired();
+void sendDataToClient();
 void sendToClient();
 void sendToTroll();
 
@@ -225,8 +226,8 @@ void listenToPorts() {
 			// Send tcp packets if data available and space in rwin
 			sendNextTcpPacket();
 		} else {
-			// TODO: Send available data to client
-			
+			// Send all available data to client
+			sendDataToClient();
 		}
 	}
 }
@@ -378,6 +379,7 @@ void recvTcpMsg() {
 			if (available >= waitingPktSize) {
 				printf("tcpd: STORED WAITING PACKET\n");
 				storeInSendBufferAndAckClient(waitingPkt, waitingPktSize);
+				waitingPktSize = 0;
 			}
 		}
 	} else {
@@ -557,6 +559,27 @@ void timerExpired() {
 		exit(1);
 	}
 	sendTcpPacket(seqnum, len);
+}
+
+void sendDataToClient() {
+	if (send_next == data_end) return; // No data
+	int send_pos = send_next % BUFFER_SIZE;
+	int data_pos = data_end%BUFFER_SIZE;
+	printf("SENDs: send_next: %d, data_end: %d\n", send_next, data_end);
+	if (send_pos > data_pos) {
+		// Data wraps around, send in two pieces
+		printf("tcpd: Sending %d - %d to client*\n", send_pos,
+		       send_pos+(BUFFER_SIZE-send_pos)-1);
+		sendToClient(buffer+send_pos, BUFFER_SIZE-send_pos);
+		send_next += BUFFER_SIZE-send_pos;
+	}
+	send_pos = send_next % BUFFER_SIZE;
+	int len = data_pos-send_pos;
+	printf("tcpd: Sending %d - %d to client\n", send_pos,
+	       send_pos+len-1);
+	sendToClient(buffer+send_pos, len);
+	send_next += len;
+	printf("SENDe: send_next: %d, data_end: %d\n", send_next, data_end);
 }
 
 void sendToClient(char *buf, int bufLen) {
