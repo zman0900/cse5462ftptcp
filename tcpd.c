@@ -58,10 +58,10 @@ void preExit();
 void recvClientMsg();
 void storeInSendBufferAndAckClient(char *buf, int len);
 void recvTcpMsg();
-void storeInRecvBuffer(char *buf, int len, uint32_t seqnum);
+void storeInRecvBuffer(char *buf, int len, uint32_t seqnum, uint32_t tsval);
 void sendNextTcpPacket();
 void sendTcpPacket(uint32_t seqnum, int pktSize);
-void sendTcpAck(uint32_t acknum);
+void sendTcpAck(uint32_t acknum, uint32_t tsecr);
 void timerExpired();
 void sendToClient();
 void sendToTroll();
@@ -348,11 +348,21 @@ void recvTcpMsg() {
 			free(i);
 			i = pktinfo_removeOneLessThan(acknum);
 		}
+		// Get RTT
+		uint32_t then = ntohl(h->field.tsecr);
+		if (then > 0) {
+			uint32_t now = getTimestamp();
+			if (now > then) { // Ignore if overflow
+				uint32_t diff = now - then;
+				printf("tcpd: Got new RTT: %d\n", diff);
+			}
+		}
 		// TODO: Put possible pending data in buffer and unblock SEND
 		
 	} else {
 		// TODO: Receiver: Store data in buffer
-		storeInRecvBuffer(data, bytes-TCP_HEADER_SIZE, ntohl(h->field.seqnum));
+		storeInRecvBuffer(data, bytes-TCP_HEADER_SIZE, ntohl(h->field.seqnum),
+		                  ntohl(h->field.tsval));
 		// Send data to client TODO: remove this
 		/*sendBufSize = bytes - TCP_HEADER_SIZE;
 		memcpy(sendBuf, data, sendBufSize);
@@ -360,12 +370,12 @@ void recvTcpMsg() {
 	}
 }
 
-void storeInRecvBuffer(char *buf, int len, uint32_t seqnum) {
+void storeInRecvBuffer(char *buf, int len, uint32_t seqnum, uint32_t tsval) {
 	if (seqnum < win_start) {
 		// Already ACK'd, must be duplicate, drop
 		printf("tcpd: Already ACK'd duplicate received.\n");
 		// ACK again to prevent more retransmissions
-		sendTcpAck(seqnum);
+		sendTcpAck(seqnum, 0);
 		return;
 	}
 	if (seqnum+len > win_start+WINSIZE) {
@@ -399,10 +409,11 @@ void storeInRecvBuffer(char *buf, int len, uint32_t seqnum) {
 		printf("tcpd: wrap around %d bytes\n", second);
 		memcpy(buffer, buf+first, second);
 	}
+	int add;
 	if (inOrder) {
 		data_end += len;
 		// Check if this packet filled a gap
-		int add = 0;
+		add = 0;
 		int tmp = pktinfo_remove(seqnum+len);
 		while (tmp != -1) {
 			add += tmp;
@@ -418,7 +429,13 @@ void storeInRecvBuffer(char *buf, int len, uint32_t seqnum) {
 	}
 
 	// Send ACK
-	sendTcpAck(data_end);
+	if (inOrder && add == 0) {
+		// Ack cooresponds to packet just received, send TSER
+		sendTcpAck(data_end, tsval);
+	} else {
+		// Don't send TSER (send 0 instead)
+		sendTcpAck(data_end, 0);
+	}
 }
 
 void sendNextTcpPacket() {
@@ -482,12 +499,12 @@ void sendTcpPacket(uint32_t seqnum, int pktSize) {
 	free(timer);
 }
 
-void sendTcpAck(uint32_t acknum) {
+void sendTcpAck(uint32_t acknum, uint32_t tsecr) {
 	// TODO: this
 	printf("tcpd: Sending ACK: %d\n", acknum);
 	// TODO: fill in properly
 	/*Header *h = */tcpheader_create(listenport, rmttrollport, 0, acknum, 0, 1,
-	                                 0, 0, NULL, 0, sendBuf);
+	                                 0, tsecr, NULL, 0, sendBuf);
 	// Send to other tcpd through troll
 	sendToTroll(sendBuf, TCP_HEADER_SIZE);
 	// Move up rwin
