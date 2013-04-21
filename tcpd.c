@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <errno.h>
+#include <math.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <signal.h>
@@ -30,6 +31,8 @@ static const char *clientAck = CLIENT_ACK_MSG;
 static const int clientAckLen = CLIENT_ACK_MSG_LEN;
 static const char *clientStart = CLIENT_START_MSG;
 static const int clientStartLen = CLIENT_START_MSG_LEN;
+static const int clock_g = 20000; // Clock granularity (microsec)
+static const int minrto = 1000000; // Minimum RTO on 1 sec (rfc2988)
 
 // Globals
 int isSenderSide;
@@ -45,6 +48,10 @@ char buffer[BUFFER_SIZE];
 uint32_t win_start = 0;
 uint32_t send_next = 0; // Not used for receiving
 uint32_t data_end = 0;  // Not used for receiving
+int rto_set = 0;
+uint32_t rto = 3000000; // Start at 3 seconds (rfc2988)
+double srtt;
+double rttvar;
 
 // Temp storage for incoming data from client until buffer space is available
 char waitingPkt[MSS];
@@ -58,6 +65,7 @@ void preExit();
 void recvClientMsg();
 void storeInSendBufferAndAckClient(char *buf, int len);
 void recvTcpMsg();
+void updateRTO(uint32_t rtt);
 void storeInRecvBuffer(char *buf, int len, uint32_t seqnum, uint32_t tsval);
 void sendNextTcpPacket();
 void sendTcpPacket(uint32_t seqnum, int pktSize);
@@ -356,9 +364,11 @@ void recvTcpMsg() {
 			if (now > then) { // Ignore if overflow
 				uint32_t diff = now - then;
 				printf("tcpd: Got new RTT: %d\n", diff);
+				// Calculate new RTO
+				updateRTO(diff);
 			}
 		}
-		// TODO: Put possible pending data in buffer and unblock SEND
+		// Put possible pending data in buffer and unblock SEND
 		if (waitingPktSize > 0) {
 			int available = getAvailableSpaceInSendBuffer();
 			if (available >= waitingPktSize) {
@@ -367,7 +377,7 @@ void recvTcpMsg() {
 			}
 		}
 	} else {
-		// TODO: Receiver: Store data in buffer
+		// Receiver: Store data in buffer
 		storeInRecvBuffer(data, bytes-TCP_HEADER_SIZE, ntohl(h->field.seqnum),
 		                  ntohl(h->field.tsval));
 		// Send data to client TODO: remove this
@@ -375,6 +385,20 @@ void recvTcpMsg() {
 		memcpy(sendBuf, data, sendBufSize);
 		sendToClient(sendBuf, sendBufSize);*/
 	}
+}
+
+void updateRTO(uint32_t rtt) {
+	if (rto_set) {
+		rttvar = 0.75*rttvar + 0.25*fabs(srtt-rtt);
+		srtt = 0.875*srtt + 0.125*rtt;
+	} else {
+		rto_set = 1;
+		srtt = rtt;
+		rttvar = rtt/2;
+	}
+	rto = srtt + MAX(clock_g, 4*rttvar);
+	rto = MAX(rto, minrto);
+	printf("tcpd: New RTO: %d\n", rto);
 }
 
 void storeInRecvBuffer(char *buf, int len, uint32_t seqnum, uint32_t tsval) {
@@ -485,14 +509,17 @@ void sendTcpPacket(uint32_t seqnum, int pktSize) {
 	}
 
 	// Add tcp header
-	// TODO: fill in properly
-	/*Header *h = */tcpheader_create(listenport, rmttrollport, seqnum, 0, 0, 0,
-	                                 0, 0, packetData, pktSize, sendBuf);
+	tcpheader_create(listenport, rmttrollport, seqnum, 0, 0, 0, 0, 0,
+	                 packetData, pktSize, sendBuf);
 
 	// Prepare timer
 	struct timeval *timer = malloc(sizeof(struct timeval));
-	timer->tv_sec = 10;  //TODO: fill in with correct RTO
-	timer->tv_usec = 0;
+	timer->tv_sec = 0;
+	timer->tv_usec = rto;
+	while (timer->tv_usec >= 1000000) {
+		timer->tv_usec -= 1000000;
+		timer->tv_sec += 1;
+	}
 
 	// Keep packet lenght until ack'd incase needed for retransmission
 	pktinfo_add(seqnum, pktSize);
@@ -508,10 +535,8 @@ void sendTcpPacket(uint32_t seqnum, int pktSize) {
 }
 
 void sendTcpAck(uint32_t acknum, uint32_t tsecr) {
-	// TODO: this
 	printf("tcpd: Sending ACK: %d\n", acknum);
-	// TODO: fill in properly
-	/*Header *h = */tcpheader_create(listenport, rmttrollport, 0, acknum, 0, 1,
+	tcpheader_create(listenport, rmttrollport, 0, acknum, 0, 1,
 	                                 0, tsecr, NULL, 0, sendBuf);
 	// Send to other tcpd through troll
 	sendToTroll(sendBuf, TCP_HEADER_SIZE);
