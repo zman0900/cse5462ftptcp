@@ -47,8 +47,8 @@ uint32_t send_next = 0; // Not used for receiving
 uint32_t data_end = 0;  // Not used for receiving
 
 // Temp storage for incoming data from client until buffer space is available
-char tempBuf[MSS];
-int tempBufSize;
+char waitingPkt[MSS];
+int waitingPktSize;
 
 // Functions
 void bindLocal();
@@ -226,6 +226,16 @@ void preExit() {
 	
 }
 
+int getAvailableSpaceInSendBuffer() {
+	int available;
+	if (data_end >= win_start) {
+		available = (win_start + BUFFER_SIZE) - data_end;
+	} else {
+		available = win_start - data_end;
+	}
+	return available;
+}
+
 void recvClientMsg() {
 	int bytes;
 	struct sockaddr_in senderaddr;
@@ -239,18 +249,13 @@ void recvClientMsg() {
 	printf("tcpd: ClientMsg: Received %d bytes\n", bytes);
 
 	// Check space
-	int available;
-	if (data_end >= win_start) {
-		available = (win_start + BUFFER_SIZE) - data_end;
-	} else {
-		available = win_start - data_end;
-	}
+	int available = getAvailableSpaceInSendBuffer();
 
 	// Handle case of not enough space
 	if (available < bytes) {
 		printf("tcpd: Buffer full!\n");
-		memcpy(tempBuf, recvBuf, bytes);
-		tempBufSize = bytes;
+		memcpy(waitingPkt, recvBuf, bytes);
+		waitingPktSize = bytes;
 		return;  // TODO: this probably isn't finished
 	}
 
@@ -339,7 +344,10 @@ void recvTcpMsg() {
 		uint32_t acknum = ntohl(h->field.acknum);
 		printf("tcpd: Received ACK: %d\n", acknum);
 		// Sender: Move send window
-		win_start = acknum;
+		if (acknum > win_start) {
+			win_start = acknum;
+			printf("tcpd: Window left edge is now: %d\n", win_start);
+		}
 		// Cancel any pending timers
 		PktInfo *i = pktinfo_removeOneLessThan(acknum);
 		while (i != NULL) {
@@ -358,7 +366,13 @@ void recvTcpMsg() {
 			}
 		}
 		// TODO: Put possible pending data in buffer and unblock SEND
-		
+		if (waitingPktSize > 0) {
+			int available = getAvailableSpaceInSendBuffer();
+			if (available >= waitingPktSize) {
+				printf("tcpd: STORED WAITING PACKET\n");
+				storeInSendBufferAndAckClient(waitingPkt, waitingPktSize);
+			}
+		}
 	} else {
 		// TODO: Receiver: Store data in buffer
 		storeInRecvBuffer(data, bytes-TCP_HEADER_SIZE, ntohl(h->field.seqnum),
