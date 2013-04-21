@@ -48,6 +48,7 @@ char buffer[BUFFER_SIZE];
 uint32_t win_start = 0;
 uint32_t send_next = 0; // Not used for receiving
 uint32_t data_end = 0;  // Not used for receiving
+uint32_t tsrecent = 0;
 int rto_set = 0;
 uint32_t rto = 3000000; // Start at 3 seconds (rfc2988)
 double srtt;
@@ -344,11 +345,6 @@ void recvTcpMsg() {
 	} else if (tcpheader_isack(h)) {
 		uint32_t acknum = ntohl(h->field.acknum);
 		printf("tcpd: Received ACK: %d\n", acknum);
-		// Sender: Move send window
-		if (acknum > win_start) {
-			win_start = acknum;
-			printf("tcpd: Window left edge is now: %d\n", win_start);
-		}
 		// Cancel any pending timers
 		PktInfo *i = pktinfo_removeOneLessThan(acknum);
 		while (i != NULL) {
@@ -357,15 +353,23 @@ void recvTcpMsg() {
 			free(i);
 			i = pktinfo_removeOneLessThan(acknum);
 		}
-		// Get RTT
-		uint32_t then = ntohl(h->field.tsecr);
-		if (then > 0) {
-			uint32_t now = getTimestamp();
-			if (now > then) { // Ignore if overflow
-				uint32_t diff = now - then;
-				printf("tcpd: Got new RTT: %d\n", diff);
-				// Calculate new RTO
-				updateRTO(diff);
+		// Sender: Move send window
+		if (acknum > win_start) {
+			win_start = acknum;
+			printf("tcpd: Window left edge is now: %d\n", win_start);
+			// Get RTT (only when window has advanced)
+			uint32_t then = ntohl(h->field.tsecr);
+			if (then > 0) {
+				uint32_t now = getTimestamp();
+				if (now > then) { // Ignore if overflow
+					uint32_t diff = now - then;
+					printf("tcpd: Got new RTT: %d\n", diff);
+					// Calculate new RTO
+					updateRTO(diff);
+				} else {
+					// time wrapped
+					printf("tcpd: TIMER WRAPPED: SKIPPING RTT UPDATE\n");
+				}
 			}
 		}
 		// Put possible pending data in buffer and unblock SEND
@@ -424,6 +428,8 @@ void storeInRecvBuffer(char *buf, int len, uint32_t seqnum, uint32_t tsval) {
 	int inOrder = 0;
 	if (seqnum == data_end) {
 		inOrder = 1;
+		printf("tcpd: UPDATING LASTACK AND TSRECENT\n");
+		tsrecent = tsval;
 	} else if (seqnum > data_end) {
 		printf("tcpd: PACKET IS EARLY\n");
 	} else {
@@ -460,13 +466,7 @@ void storeInRecvBuffer(char *buf, int len, uint32_t seqnum, uint32_t tsval) {
 	}
 
 	// Send ACK
-	if (inOrder && add == 0) {
-		// Ack cooresponds to packet just received, send TSER
-		sendTcpAck(data_end, tsval);
-	} else {
-		// Don't send TSER (send 0 instead)
-		sendTcpAck(data_end, 0);
-	}
+	sendTcpAck(data_end, tsrecent);
 }
 
 void sendNextTcpPacket() {
