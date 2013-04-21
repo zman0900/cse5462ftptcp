@@ -552,9 +552,8 @@ void timerExpired() {
 	printf("tcpd: Need to retransmit seqnum %d...\n", seqnum);
 	int len = pktinfo_remove(seqnum);
 	if (len < 0) {
-		fprintf(stderr, "tcpd: Retransmit needed for packet not in buffer!\n");
-		preExit();
-		exit(1);
+		// Make sure this isn't for an already canceled timer
+		return;
 	}
 	sendTcpPacket(seqnum, len);
 }
