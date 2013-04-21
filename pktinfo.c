@@ -15,6 +15,18 @@ PktInfo* _pktinfo_find(uint32_t seqnum) {
 	return cur;
 }
 
+PktInfo* _pktinfo_removeItem(PktInfo* i) {
+	if (i->next != NULL) i->next->prev = i->prev;
+	if (i->prev != NULL) i->prev->next = i->next;
+	if (i == start) start = i->next;
+	if (i == end) end = i->prev;
+	i->next = NULL;
+	i->prev = NULL;
+	--num;
+	len -= i->length;
+	return i;
+}
+
 void pktinfo_add(uint32_t seqnum, int length) {
 	PktInfo *insert = malloc(sizeof(PktInfo));
 	insert->seqnum = seqnum;
@@ -45,14 +57,21 @@ int pktinfo_remove(uint32_t seqnum) {
 	if (cur == NULL) return -1;
 	int ret = cur->length;
 	// Remove from list
-	if (cur->next != NULL) cur->next->prev = cur->prev;
-	if (cur->prev != NULL) cur->prev->next = cur->next;
-	if (cur == start) start = cur->next;
-	if (cur == end) end = cur->prev;
+	cur = _pktinfo_removeItem(cur);
 	free(cur);
-	--num;
-	len -= ret;
 	return ret;
+}
+
+PktInfo* pktinfo_removeOneLessThan(uint32_t seqnum) {
+	PktInfo *cur = start;
+	while (cur != NULL && cur->seqnum >= seqnum) {
+		cur = cur->next;
+	}
+	if (cur != NULL) {
+		// Remove it first
+		cur = _pktinfo_removeItem(cur);
+	}
+	return cur;
 }
 
 int pktinfo_number() {

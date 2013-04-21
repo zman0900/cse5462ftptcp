@@ -19,6 +19,9 @@ void pktinfo_add(uint32_t seqnum, int length);
 int pktinfo_get(uint32_t seqnum);
 // Returns length if found, -1 if not found, removes from list
 int pktinfo_remove(uint32_t seqnum);
+// Finds and removes one pktinfo with a sequenc < seqnum
+// Returns the PktInfo, or NULL if none found
+PktInfo* pktinfo_removeOneLessThan(uint32_t seqnum);
 // Return number of packet infos in list
 int pktinfo_number();
 // Returns total length of all packets with info stored

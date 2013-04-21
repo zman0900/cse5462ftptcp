@@ -61,7 +61,7 @@ void recvTcpMsg();
 void storeInRecvBuffer(char *buf, int len, uint32_t seqnum);
 void sendNextTcpPacket();
 void sendTcpPacket(uint32_t seqnum, int pktSize);
-void sendTcpAck(uint32_t seqnum);
+void sendTcpAck(uint32_t acknum);
 void timerExpired();
 void sendToClient();
 void sendToTroll();
@@ -296,11 +296,12 @@ void recvTcpMsg() {
 
 	// Verify checksum
 	if (!tcpheader_verifycrc(recvBuf, bytes)) {
-		printf("tcpd: CHECKSUM FAILED! seq:%u DROPPED\n",
-		       ntohl(h->field.seqnum));
+		printf("tcpd: CHECKSUM FAILED! seq?:%u ack?:%u DROPPED\n",
+		       ntohl(h->field.seqnum), ntohl(h->field.acknum));
 		return; // Drop it
 	}
-	printf("tcpd: Checksum OK seq:%u\n", ntohl(h->field.seqnum));
+	printf("tcpd: Checksum OK seq:%u ack:%u\n", ntohl(h->field.seqnum),
+	       ntohl(h->field.acknum));
 
 	// Unwrap tcp
 	char *data = recvBuf+TCP_HEADER_SIZE;
@@ -335,8 +336,18 @@ void recvTcpMsg() {
 		}
 		// TODO: Send ACK for FIN
 	} else if (tcpheader_isack(h)) {
-		// TODO: Sender: Move send window
-		
+		uint32_t acknum = ntohl(h->field.acknum);
+		printf("tcpd: Received ACK: %d\n", acknum);
+		// Sender: Move send window
+		win_start = acknum;
+		// Cancel any pending timers
+		PktInfo *i = pktinfo_removeOneLessThan(acknum);
+		while (i != NULL) {
+			printf("tcpd: Canceling timer for seqnum: %d\n", i->seqnum);
+			timer_cancel(socktimer, i->seqnum);
+			free(i);
+			i = pktinfo_removeOneLessThan(acknum);
+		}
 		// TODO: Put possible pending data in buffer and unblock SEND
 		
 	} else {
@@ -407,12 +418,13 @@ void storeInRecvBuffer(char *buf, int len, uint32_t seqnum) {
 	}
 
 	// Send ACK
-	sendTcpAck(seqnum);
+	sendTcpAck(data_end);
 }
 
 void sendNextTcpPacket() {
 	if (data_end <= send_next) {
 		// no data in buffer
+		printf("tcpd: No data to send!\n");
 		return;
 	}
 	int rwin_used = pktinfo_length();
@@ -420,7 +432,10 @@ void sendNextTcpPacket() {
 	pktSize = MIN(MSS, pktSize);
 	// Don't send more than rwin
 	pktSize = MIN(WINSIZE - rwin_used, pktSize);
-	if (pktSize <= 0) return;
+	if (pktSize <= 0) {
+		printf("tcpd: NOT SENDING, no space in rwin\n");
+		return;
+	}
 	// Actually send
 	sendTcpPacket(send_next, pktSize);
 
@@ -467,9 +482,16 @@ void sendTcpPacket(uint32_t seqnum, int pktSize) {
 	free(timer);
 }
 
-void sendTcpAck(uint32_t seqnum) {
+void sendTcpAck(uint32_t acknum) {
 	// TODO: this
-	printf("tcpd: Would ACK seqnum: %d\n", seqnum);
+	printf("tcpd: Sending ACK: %d\n", acknum);
+	// TODO: fill in properly
+	/*Header *h = */tcpheader_create(listenport, rmttrollport, 0, acknum, 0, 1,
+	                                 0, 0, NULL, 0, sendBuf);
+	// Send to other tcpd through troll
+	sendToTroll(sendBuf, TCP_HEADER_SIZE);
+	// Move up rwin
+	win_start = acknum;
 }
 
 void timerExpired() {
@@ -495,12 +517,14 @@ void sendToClient(char *buf, int bufLen) {
 }
 
 void sendToTroll(char *buf, int bufLen) {
-	uint16_t seqnum = ntohl(((Header *)buf)->field.seqnum);
+	uint32_t seqnum = ntohl(((Header *)buf)->field.seqnum);
+	uint32_t acknum = ntohl(((Header *)buf)->field.acknum);
 	if (sendAllTo(socklocal, buf, &bufLen, trolladdr->ai_addr,
 		           trolladdr->ai_addrlen) < 0) {
 		perror("tcpd: sendto");
 		preExit();
 		exit(1);
 	}
-	printf("tcpd: TcpMsg: Sent %d bytes, seq:%u\n", bufLen, seqnum);
+	printf("tcpd: TcpMsg: Sent %d bytes, seq:%u ack:%u\n", bufLen, seqnum,
+	       acknum);
 }
