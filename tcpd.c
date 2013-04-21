@@ -256,15 +256,8 @@ void recvClientMsg() {
 		printf("tcpd: Buffer full!\n");
 		memcpy(waitingPkt, recvBuf, bytes);
 		waitingPktSize = bytes;
-		return;  // TODO: this probably isn't finished
+		return;
 	}
-
-// TODO: remove this (for project)
-	// delay sending ack so client slows down to avoid dropped packets
-	struct timeval tv;
-	tv.tv_sec = 0;
-	tv.tv_usec = 50000;
-	select(0, NULL, NULL, NULL, &tv);
 
 	// Store data in circular buffer
 	storeInSendBufferAndAckClient(recvBuf, bytes);
@@ -389,7 +382,7 @@ void storeInRecvBuffer(char *buf, int len, uint32_t seqnum, uint32_t tsval) {
 		// Already ACK'd, must be duplicate, drop
 		printf("tcpd: Already ACK'd duplicate received.\n");
 		// ACK again to prevent more retransmissions
-		sendTcpAck(seqnum, 0);
+		sendTcpAck(win_start, 0);
 		return;
 	}
 	if (seqnum+len > win_start+WINSIZE) {
@@ -467,6 +460,7 @@ void sendNextTcpPacket() {
 		printf("tcpd: NOT SENDING, no space in rwin\n");
 		return;
 	}
+
 	// Actually send
 	sendTcpPacket(send_next, pktSize);
 
@@ -522,7 +516,10 @@ void sendTcpAck(uint32_t acknum, uint32_t tsecr) {
 	// Send to other tcpd through troll
 	sendToTroll(sendBuf, TCP_HEADER_SIZE);
 	// Move up rwin
-	win_start = acknum;
+	if (acknum > win_start) {
+		win_start = acknum;
+		printf("tcpd: Window left edge is now: %d\n", win_start);
+	}
 }
 
 void timerExpired() {
