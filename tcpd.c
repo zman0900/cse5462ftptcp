@@ -27,9 +27,9 @@ int rmttrollport;   // Port troll sends to on other tcpd
 char *remote_host;
 
 // Constants
-static const char *clientAck = CLIENT_ACK_MSG;
+static const void *clientAck = CLIENT_ACK_MSG;
 static const int clientAckLen = CLIENT_ACK_MSG_LEN;
-static const char *clientStart = CLIENT_START_MSG;
+static const void *clientStart = CLIENT_START_MSG;
 static const int clientStartLen = CLIENT_START_MSG_LEN;
 static const int clock_g = 20000; // Clock granularity (microsec)
 static const int minrto = 1000000; // Minimum RTO on 1 sec (rfc2988)
@@ -38,13 +38,13 @@ static const int minrto = 1000000; // Minimum RTO on 1 sec (rfc2988)
 int isSenderSide;
 int socklocal, socklisten, socktimer;
 struct addrinfo *trolladdr, *clientaddr;
-char recvBuf[TCP_HEADER_SIZE+MSS], sendBuf[TCP_HEADER_SIZE+MSS];
+unsigned char recvBuf[TCP_HEADER_SIZE+MSS], sendBuf[TCP_HEADER_SIZE+MSS];
 int sendBufSize;
 char addrString[INET6_ADDRSTRLEN];
 
 // TCP State
 int tcp_isConn = 0;
-char buffer[BUFFER_SIZE];
+unsigned char buffer[BUFFER_SIZE];
 uint32_t win_start = 0;
 uint32_t send_next = 0; // Not used for receiving
 uint32_t data_end = 0;  // Not used for receiving
@@ -55,7 +55,7 @@ double srtt;
 double rttvar;
 
 // Temp storage for incoming data from client until buffer space is available
-char waitingPkt[MSS];
+unsigned char waitingPkt[MSS];
 int waitingPktSize;
 
 // Functions
@@ -64,17 +64,17 @@ void bindListen();
 void listenToPorts();
 void preExit();
 void recvClientMsg();
-void storeInSendBufferAndAckClient(char *buf, int len);
+void storeInSendBufferAndAckClient(void *buf, int len);
 void recvTcpMsg();
 void updateRTO(uint32_t rtt);
-void storeInRecvBuffer(char *buf, int len, uint32_t seqnum, uint32_t tsval);
+void storeInRecvBuffer(void *buf, int len, uint32_t seqnum, uint32_t tsval);
 void sendNextTcpPacket();
 void sendTcpPacket(uint32_t seqnum, int pktSize);
 void sendTcpAck(uint32_t acknum, uint32_t tsecr);
 void timerExpired();
 void sendDataToClient();
-void sendToClient();
-void sendToTroll();
+void sendToClient(const void *buf, int bufLen);
+void sendToTroll(const void *buf, int bufLen);
 
 int main(int argc, char *argv[]) {
 	if (argc < 2 || argc > 3) {
@@ -273,7 +273,7 @@ void recvClientMsg() {
 	storeInSendBufferAndAckClient(recvBuf, bytes);
 }
 
-void storeInSendBufferAndAckClient(char *buf, int len) {
+void storeInSendBufferAndAckClient(void *buf, int len) {
 	// Store data in circular buffer
 	int insert = data_end % BUFFER_SIZE;
 	int copyToEnd = MIN(len, BUFFER_SIZE - insert);
@@ -312,7 +312,7 @@ void recvTcpMsg() {
 	       ntohl(h->field.acknum));
 
 	// Unwrap tcp
-	char *data = recvBuf+TCP_HEADER_SIZE;
+	void *data = recvBuf+TCP_HEADER_SIZE;
 
 	// If this is a new connection
 	if (!tcp_isConn) {
@@ -386,10 +386,6 @@ void recvTcpMsg() {
 		// Receiver: Store data in buffer
 		storeInRecvBuffer(data, bytes-TCP_HEADER_SIZE, ntohl(h->field.seqnum),
 		                  ntohl(h->field.tsval));
-		// Send data to client TODO: remove this
-		/*sendBufSize = bytes - TCP_HEADER_SIZE;
-		memcpy(sendBuf, data, sendBufSize);
-		sendToClient(sendBuf, sendBufSize);*/
 	}
 }
 
@@ -407,7 +403,7 @@ void updateRTO(uint32_t rtt) {
 	printf("tcpd: New RTO: %d\n", rto);
 }
 
-void storeInRecvBuffer(char *buf, int len, uint32_t seqnum, uint32_t tsval) {
+void storeInRecvBuffer(void *buf, int len, uint32_t seqnum, uint32_t tsval) {
 	if (seqnum < win_start) {
 		// Already ACK'd, must be duplicate, drop
 		printf("tcpd: Already ACK'd duplicate received.\n");
@@ -437,6 +433,7 @@ void storeInRecvBuffer(char *buf, int len, uint32_t seqnum, uint32_t tsval) {
 	} else {
 		printf("tcpd: DUPLICATE UN-ACKd PACKET!\n");
 	}
+
 	// Insert packet
 	int win_pos = seqnum % BUFFER_SIZE;
 	int first = MIN(BUFFER_SIZE - win_pos, len);
@@ -448,6 +445,7 @@ void storeInRecvBuffer(char *buf, int len, uint32_t seqnum, uint32_t tsval) {
 		printf("tcpd: wrap around %d bytes\n", second);
 		memcpy(buffer, buf+first, second);
 	}
+
 	int add;
 	if (inOrder) {
 		data_end += len;
@@ -497,10 +495,10 @@ void sendNextTcpPacket() {
 
 void sendTcpPacket(uint32_t seqnum, int pktSize) {
 	int send_pos = seqnum % BUFFER_SIZE;
-	char *packetData;
+	unsigned char *packetData;
 	if (send_pos + pktSize > BUFFER_SIZE) {
 		// Packet wraps around end of buffer
-		int first = (send_pos + pktSize) - BUFFER_SIZE;
+		int first = BUFFER_SIZE - send_pos;
 		int second = pktSize - first;
 		// Using recvBuf as temp storage
 		memcpy(recvBuf, buffer+send_pos, first);
@@ -582,7 +580,7 @@ void sendDataToClient() {
 	printf("SENDe: send_next: %d, data_end: %d\n", send_next, data_end);
 }
 
-void sendToClient(char *buf, int bufLen) {
+void sendToClient(const void *buf, int bufLen) {
 	if (sendAllTo(socklocal, buf, &bufLen, clientaddr->ai_addr,
 		           clientaddr->ai_addrlen) < 0) {
 		perror("tcpd: sendto");
@@ -592,7 +590,7 @@ void sendToClient(char *buf, int bufLen) {
 	printf("tcpd: ClientMsg: Sent %d bytes\n", bufLen);
 }
 
-void sendToTroll(char *buf, int bufLen) {
+void sendToTroll(const void *buf, int bufLen) {
 	uint32_t seqnum = ntohl(((Header *)buf)->field.seqnum);
 	uint32_t acknum = ntohl(((Header *)buf)->field.acknum);
 	if (sendAllTo(socklocal, buf, &bufLen, trolladdr->ai_addr,

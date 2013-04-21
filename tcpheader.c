@@ -67,8 +67,8 @@ uint16_t crc16(uint16_t crc, char const *buffer, size_t len)
 
 Header* tcpheader_create(uint16_t sport, uint16_t dport, uint32_t seqnum,
                         uint32_t acknum, int isSyn, int isAck, int isFin,
-                        uint32_t tsecr, char *data, int data_bytes,
-                        char *packet) {
+                        uint32_t tsecr, void *data, int data_bytes,
+                        void *packet) {
 	Header *h = (Header *)packet;  // Write header directly into buffer
 
 	h->field.sport = htons(sport);  // Tells other side where to send
@@ -110,7 +110,7 @@ int tcpheader_issyn(Header *h) {
 	return h->field.flags & (1 << 1);
 }
 
-int tcpheader_verifycrc(char *packet, int bytes) {
+int tcpheader_verifycrc(void *packet, int bytes) {
 	Header *h = (Header *)packet;
 	uint16_t sent_crc = ntohs(h->field.checksum);
 	h->field.checksum = 0;

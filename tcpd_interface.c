@@ -27,9 +27,10 @@ char clientAckBuf[CLIENT_ACK_MSG_LEN];
 // This is needed since recvfrom discards data beyond the requested size
 // tcpd could send up to BUFFER_SIZE bytes of data at once, but ftps can only
 // request up to 1000 bytes at once, so store it here.
-char recvBuf[BUFFER_SIZE+1000];
+unsigned char recvBuf[BUFFER_SIZE+1000];
 int recvStart = 0;
 int recvSize = 0;
+int total = 0;
 
 //// PUBLIC FUNCTIONS ////
 
@@ -138,12 +139,6 @@ ssize_t SEND(int sockfd, const void *buf, size_t len, int flags) {
 		return -1;
 	}
 
-	// Send all the bytes
-	/*if (sendAllTo(sockfd, buf, (int *)&len, si->tcpdaddr->ai_addr,
-		           si->tcpdaddr->ai_addrlen) < 0) {
-		perror("tcpd_interface: SEND");
-		return -1;
-	}*/
 	int total = 0;
 	int bytesleft = len;
 	int n, bytes;
@@ -187,12 +182,13 @@ ssize_t RECV(int sockfd, void *buf, size_t len, int flags) {
 	if (recvSize > 0 && recvSize < len) {
 		// Move to beginning of buffer
 		memmove(recvBuf, recvBuf+recvStart, recvSize);
+		recvStart = 0;
 	}
 
 	while (recvSize < len) {
 		// Need more data
 		int bytes;
-		if ((bytes = recvfrom(sockfd, recvBuf+recvStart, BUFFER_SIZE, 0,
+		if ((bytes = recvfrom(sockfd, recvBuf+recvSize, BUFFER_SIZE, 0,
 			                  si->tcpdaddr->ai_addr,
 			                  &(si->tcpdaddr->ai_addrlen))) < 0) {
 			perror("tcpd_interface: RECV");
@@ -208,7 +204,8 @@ ssize_t RECV(int sockfd, void *buf, size_t len, int flags) {
 		recvStart = 0;
 	else
 		recvStart += len;
-	printf("tcpd_interface: Delivered %lu bytes\n", len);
+	total += len;
+	printf("tcpd_interface: Delivered %lu bytes (total %d)\n", len, total);
 	return len;
 }
 
