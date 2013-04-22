@@ -41,6 +41,7 @@ struct addrinfo *trolladdr, *clientaddr;
 unsigned char recvBuf[TCP_HEADER_SIZE+MSS+1], sendBuf[TCP_HEADER_SIZE+MSS];
 int sendBufSize;
 char addrString[INET6_ADDRSTRLEN];
+struct timeval *timer = NULL;
 
 // TCP State
 int tcp_isConn = 0;
@@ -53,6 +54,14 @@ int rto_set = 0;
 uint32_t rto = 3000000; // Start at 3 seconds (rfc2988)
 double srtt;
 double rttvar;
+int gotClose = 0;
+int transferDone = 0;
+int finSent = 0;
+int finReceived = 0;
+int gotAckForFin = 0;
+int sentAckForFin = 0;
+int waitingForFinAckNum = 0;
+int finRetrys = 2;
 
 // Temp storage for incoming data from client until buffer space is available
 unsigned char waitingPkt[MSS];
@@ -73,6 +82,8 @@ void sendTcpPacket(uint32_t seqnum, int pktSize);
 void sendTcpAck(uint32_t acknum, uint32_t tsecr);
 void timerExpired();
 void sendDataToClient();
+void sendFin(uint32_t seqnum, uint32_t acknum);
+void sendFinAck(uint32_t seqnum, uint32_t acknum);
 void sendToClient(const void *buf, int bufLen);
 void sendToTroll(const void *buf, int bufLen);
 
@@ -194,24 +205,53 @@ void listenToPorts() {
 	printf("tcpd: starting select loop\n");
 
 	while (1) {
+		if (transferDone && !finSent) {
+			if (isSenderSide)
+				sendFin(send_next, 0); // Acknum is 0
+			else
+				sendFin(0, data_end);
+		}
+
+		if (sentAckForFin && gotAckForFin) {
+			// Closing complete
+			printf("tcpd: Connection closed.\n");
+			exit(0);
+		}
+
 		FD_ZERO(&readfds);
-		FD_SET(socklocal, &readfds);
+		if (!gotClose) FD_SET(socklocal, &readfds);
 		FD_SET(socklisten, &readfds);
 		if (isSenderSide) FD_SET(socktimer, &readfds);
 
 		// Block until input on a socket
-		if (select(FD_SETSIZE, &readfds, NULL, NULL, NULL) < 0) {
+		int sel;
+		if ((sel = select(FD_SETSIZE, &readfds, NULL, NULL, timer)) < 0) {
 			perror("tcpd: select");
 			preExit();
 			exit(1);
 		}
 		printf("tcpd: woke up from select\n");
 
+		if (sel == 0) {
+			if (finRetrys <= 0 && sentAckForFin) {
+				// Give up after at least 3 trys if already sent ACK to other
+				printf("tcpd: FIN ACK NOT RECEIVED, GIVING UP\n");
+				exit(2);
+			}
+			printf("tcpd: RETRYING FIN\n");
+			timer = NULL;
+			--finRetrys;
+			if (isSenderSide)
+				sendFin(send_next, 0); // Acknum is 0
+			else
+				sendFin(0, data_end);
+		}
+
 		if (isSenderSide && FD_ISSET(socktimer, &readfds)) {
 			timerExpired();
 		}
 
-		if (FD_ISSET(socklocal, &readfds)) {
+		if (!gotClose && FD_ISSET(socklocal, &readfds)) {
 			// Msg from client
 			recvClientMsg();
 		}
@@ -221,13 +261,15 @@ void listenToPorts() {
 			recvTcpMsg();
 		}
 
-		// Send data
-		if (isSenderSide) {
-			// Send tcp packets if data available and space in rwin
-			sendNextTcpPacket();
-		} else {
-			// Send all available data to client
-			sendDataToClient();
+		if (!finSent) {
+			// Send data
+			if (isSenderSide) {
+				// Send tcp packets if data available and space in rwin
+				sendNextTcpPacket();
+			} else {
+				// Send all available data to client
+				sendDataToClient();
+			}
 		}
 	}
 }
@@ -276,6 +318,8 @@ void recvClientMsg() {
 		storeInSendBufferAndAckClient(recvBuf+1, bytes);
 	} else if (recvBuf[0] == 1) {
 		// Control
+		printf("tcpd: GOT CLOSE NOTIFICATION\n");
+		gotClose = 1;
 	} else {
 		// Error
 		printf("tcpd: INVALID PACKET FROM CLIENT!\n");
@@ -348,14 +392,17 @@ void recvTcpMsg() {
 	// Since this is only one-way for HW2, just close connection on FIN
 	if (tcpheader_isfin(h)) {
 		printf("tcpd: Got FIN packet\n");
-		tcp_isConn = 0;
-		if (!isSenderSide) {
-			free(remote_host);
-			rmttrollport = -1;
-		}
-		// TODO: Send ACK for FIN
+		finReceived = 1;
+		// Send Ack
+		sendFinAck(ntohl(h->field.seqnum), ntohl(h->field.acknum)+1);
 	} else if (tcpheader_isack(h)) {
 		uint32_t acknum = ntohl(h->field.acknum);
+		// Check if for FIN
+		if (finSent && !gotAckForFin && acknum == waitingForFinAckNum) {
+			printf("tcpd: Received ACK for FIN\n");
+			gotAckForFin = 1;
+			return;
+		}
 		printf("tcpd: Received ACK: %d\n", acknum);
 		// Cancel any pending timers
 		PktInfo *i = pktinfo_removeOneLessThan(acknum);
@@ -483,7 +530,8 @@ void storeInRecvBuffer(void *buf, int len, uint32_t seqnum, uint32_t tsval) {
 void sendNextTcpPacket() {
 	if (data_end <= send_next) {
 		// no data in buffer
-		printf("tcpd: No data to send!\n");
+		printf("tcpd: NO DATA TO SEND!\n");
+		if (gotClose) transferDone = 1;
 		return;
 	}
 	int rwin_used = pktinfo_length();
@@ -570,10 +618,14 @@ void timerExpired() {
 }
 
 void sendDataToClient() {
-	if (send_next == data_end) return; // No data
+	if (send_next == data_end) {
+		// No data
+		printf("NO DATA TO SEND!\n");
+		if (gotClose) transferDone = 1;
+		return;
+	}
 	int send_pos = send_next % BUFFER_SIZE;
 	int data_pos = data_end%BUFFER_SIZE;
-	printf("SENDs: send_next: %d, data_end: %d\n", send_next, data_end);
 	if (send_pos > data_pos) {
 		// Data wraps around, send in two pieces
 		printf("tcpd: Sending %d - %d to client*\n", send_pos,
@@ -587,7 +639,31 @@ void sendDataToClient() {
 	       send_pos+len-1);
 	sendToClient(buffer+send_pos, len);
 	send_next += len;
-	printf("SENDe: send_next: %d, data_end: %d\n", send_next, data_end);
+}
+
+void sendFin(uint32_t seqnum, uint32_t acknum) {
+	printf("tcpd: Sending FIN seq:%d ack:%d\n", seqnum, acknum);
+	tcpheader_create(listenport, rmttrollport, seqnum, acknum, 0, 1,
+	                                 1, 0, NULL, 0, sendBuf);
+	// Send to other tcpd through troll
+	sendToTroll(sendBuf, TCP_HEADER_SIZE);
+
+	finSent = 1;
+	waitingForFinAckNum = acknum+1;
+
+	// Set timer
+	timer = malloc(sizeof(struct timeval));
+	timer->tv_sec = 3;
+	timer->tv_usec = 0;
+}
+
+void sendFinAck(uint32_t seqnum, uint32_t acknum) {
+	printf("tcpd: Sending ACK for FIN seq:%d ack:%d\n", seqnum, acknum);
+	tcpheader_create(listenport, rmttrollport, seqnum, acknum, 0, 1,
+	                                 0, 0, NULL, 0, sendBuf);
+	// Send to other tcpd through troll
+	sendToTroll(sendBuf, TCP_HEADER_SIZE);
+	sentAckForFin = 1;
 }
 
 void sendToClient(const void *buf, int bufLen) {

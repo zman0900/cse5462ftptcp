@@ -24,8 +24,9 @@ fi
 #./troll -S localhost -b 6664 -C $1 -a $2 6665 -x 0 -se10 -g 25 -x 25 -t &
 # Reording and garbling and destroying and duplication (troll crashes)
 #./troll -S localhost -b 6664 -C $1 -a $2 6665 -x 0 -se10 -g 25 -x 25 -m 25 -t &
-# Garbling and destroying and duplication (troll crashes)
+# Garbling and destroying and duplication
 ./troll -S localhost -b 6664 -C $1 -a $2 6665 -x 0 -g 25 -x 25 -m 25 -t &
 TROLL_PID=$!
 ./tcpd $2 $1
+sleep 5 # Imma let troll finish
 kill $TROLL_PID

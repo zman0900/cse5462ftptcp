@@ -14,7 +14,7 @@
 
 /*
  * PACKET FORMAT (outgoing only)
- * control(1)/normal(0) (1 byte)
+ * control (1 byte) 0=>data 1=>FIN
  * data (remaining bytes)
  */
 // If first byte is 1, data is not forwarded, but is a command for tcpd
@@ -225,6 +225,13 @@ ssize_t RECV(int sockfd, void *buf, size_t len, int flags) {
 int CLOSE(int fd) {
 	// Get data
 	if (si != NULL) {
+		// tell tcpd
+		uint8_t control = 1;
+		if (sendto(fd, &control, 1, 0, si->tcpdaddr->ai_addr,
+		                si->tcpdaddr->ai_addrlen) != 1) {
+			perror("tcpd_interface: CLOSE");
+		}
+		// Clean up
 		free(si);
 		si = NULL;
 		return close(fd);
