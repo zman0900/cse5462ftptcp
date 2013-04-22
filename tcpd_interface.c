@@ -12,6 +12,13 @@
 #include "common.h"
 #include "tcpd_interface.h"
 
+/*
+ * PACKET FORMAT (outgoing only)
+ * control(1)/normal(0) (1 byte)
+ * data (remaining bytes)
+ */
+// If first byte is 1, data is not forwarded, but is a command for tcpd
+
 typedef struct _sockinfo {
 	const struct sockaddr *addr;
 	socklen_t addrlen;
@@ -31,6 +38,7 @@ unsigned char recvBuf[BUFFER_SIZE+1000];
 int recvStart = 0;
 int recvSize = 0;
 int total = 0;
+unsigned char sendBuf[1001];
 
 //// PUBLIC FUNCTIONS ////
 
@@ -139,13 +147,18 @@ ssize_t SEND(int sockfd, const void *buf, size_t len, int flags) {
 		return -1;
 	}
 
+	// Add control char to front
+	sendBuf[0] = 0;
+	memcpy(sendBuf+1, buf, len);
+	++len;
+
 	int total = 0;
 	int bytesleft = len;
 	int n, bytes;
 	while (total < len) {
-		if ((n = sendto(sockfd, buf+total, bytesleft, 0, si->tcpdaddr->ai_addr,
-		                si->tcpdaddr->ai_addrlen)) < 0) {
-			perror("send");
+		if ((n = sendto(sockfd, sendBuf+total, bytesleft, 0,
+		                si->tcpdaddr->ai_addr, si->tcpdaddr->ai_addrlen)) < 0) {
+			perror("tcpd_interface: SEND");
 			break;
 		}
 		total += n;
@@ -166,7 +179,7 @@ ssize_t SEND(int sockfd, const void *buf, size_t len, int flags) {
 		printf("tcpd_interface: Client ack received\n");
 	}
 
-	printf("tcpd_interface: Sent %d bytes\n", (int)len);
+	printf("tcpd_interface: Sent %d bytes\n", (int)len-1);
 
 	return len;
 }
@@ -229,11 +242,11 @@ int recvBytes(int sockfd, char *buf, int *b) {
 
 	while (total < *b) {
 		if ((n = RECV(sockfd, buf+total, bytesleft, 0)) == -1) {
-			perror("recv");
+			perror("tcpd_interface: recvBytes");
 			break;
 		}
 		if (n == 0) {
-			fprintf(stderr, "Connection lost.\n");
+			fprintf(stderr, "tcpd_interface: Connection lost.\n");
 			return -1;
 		}
 		total += n;

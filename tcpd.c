@@ -38,7 +38,7 @@ static const int minrto = 1000000; // Minimum RTO on 1 sec (rfc2988)
 int isSenderSide;
 int socklocal, socklisten, socktimer;
 struct addrinfo *trolladdr, *clientaddr;
-unsigned char recvBuf[TCP_HEADER_SIZE+MSS], sendBuf[TCP_HEADER_SIZE+MSS];
+unsigned char recvBuf[TCP_HEADER_SIZE+MSS+1], sendBuf[TCP_HEADER_SIZE+MSS];
 int sendBufSize;
 char addrString[INET6_ADDRSTRLEN];
 
@@ -250,27 +250,38 @@ void recvClientMsg() {
 	int bytes;
 	struct sockaddr_in senderaddr;
 	socklen_t saddr_sz = sizeof senderaddr;
-	if ((bytes = recvfrom(socklocal, recvBuf, MSS, 0,
+	if ((bytes = recvfrom(socklocal, recvBuf, MSS+1, 0,
 	                      (struct sockaddr *)&senderaddr, &saddr_sz)) < 0) {
 		perror("tcpd: recvfrom");
 		preExit();
 		exit(1);
 	}
+	--bytes;
 	printf("tcpd: ClientMsg: Received %d bytes\n", bytes);
 
-	// Check space
-	int available = getAvailableSpaceInSendBuffer();
+	// Check if data or control
+	if (recvBuf[0] == 0) { // data
+		// Check space
+		int available = getAvailableSpaceInSendBuffer();
 
-	// Handle case of not enough space
-	if (available < bytes) {
-		printf("tcpd: Buffer full!\n");
-		memcpy(waitingPkt, recvBuf, bytes);
-		waitingPktSize = bytes;
-		return;
+		// Handle case of not enough space
+		if (available < bytes) {
+			printf("tcpd: Buffer full!\n");
+			memcpy(waitingPkt, recvBuf+1, bytes);
+			waitingPktSize = bytes;
+			return;
+		}
+
+		// Store data in circular buffer
+		storeInSendBufferAndAckClient(recvBuf+1, bytes);
+	} else if (recvBuf[0] == 1) {
+		// Control
+	} else {
+		// Error
+		printf("tcpd: INVALID PACKET FROM CLIENT!\n");
+		preExit();
+		exit(1);
 	}
-
-	// Store data in circular buffer
-	storeInSendBufferAndAckClient(recvBuf, bytes);
 }
 
 void storeInSendBufferAndAckClient(void *buf, int len) {
