@@ -3,15 +3,26 @@ Dan Ziemba
 
 Simple file transfer client and server using fake tcp sockets that actually
 connect to tcpd, a program which wraps udp packet with a tcp header then sends
-packets through the troll program to simulate poor quality networks. Currently
-no checking is done for lost or corrupted packets and none of the tcp emulation
-is actually done.  Speed is limited to 20 KB/s to prevent dropped packets by
-troll.
+packets through the troll program to simulate poor quality networks.
 
 Build:
 Run make
 
-Run:
+Run (Simple):
+Two scripts are included to automate launching tcpd and troll on each machine.
+Server-port, listen-port, and port should all be the same.  This will start
+troll on each machine with garbling, destroying, and duplication.  Several other
+optons are commented out inside each script.
+	Server:
+	./start_server_support.sh <client-host> <listen-port>
+	./ftps <port>
+
+	Client:
+	./timer
+	./start_client_support.sh <server-host> <server-port>
+	./ftpc <host> <port> <file>
+
+Run (Detailed):
 In order to start troll on the server, it is necessary to know the host of the
 client that will be connecting.  Note the listen-port+1.  If server will listen
 on port 10000 for example, client will listen on port 10001 so that is what 
@@ -22,6 +33,7 @@ should be given to server side troll.
 	./ftps <listen-port>
 
 	Client:
+	./timer
 	./troll -S localhost -b 6664 -C <server-host> -a <server-port> 6665 [more]
 	./tcpd <server-port> <server-host>
 	./ftpc <server-host> <server-port> <file-name>
@@ -36,3 +48,39 @@ ftpc will listen on port 6663 for messages from tcpd
 ftpc will send messages to tcpd on port 6664
 tcpd in client mode will send messages to troll on port 6665
 tcpd in client mode will listen on port 6664 for messages from troll
+
+
+Description of Source Files:
+common.c:
+	Contains various functions that are shared by all of the binaries. See 
+	common.h for more detailed descriptions.
+ftpc.c:
+	Main logic for the ftpc program.
+ftps.c:
+	Main logic for the ftps program.
+pktinfo.c:
+	Data structure used by tcpd to maintain a list of sequence numbers with 
+	associated lengths, with the ability to remove a specific item, or any one
+	item with a sequence number less than a specific value.  Internally  stores
+	info as a unordered linked list.
+tcpd.c:
+	Main logic for the tcpd program.  The same tcpd binary is used for both
+	sending and receiving side.
+tcpd_interface.c:
+	Contains the artificial tcp sockets implementation, and is used by both ftps
+	and ftpc.  The various functions actually open a udp socket for
+	communication with a tcpd running on the same machine.
+tcpheader.c:
+	Contains a data structure representing the tcp header and various helper
+	methods to fill it or query info from it.
+timer.c:
+	Main logic for the timer process.
+timer_interface.c:
+	Contains methods for starting and stopping timers and querying the result of
+	expired timers.  This is used by tcpd (and timer-test) to communicate with 
+	the timer.  Each method actually uses a udp socket to communicate with a 
+	timer process running on the same machine.
+timer_test.c:
+	Main logic for a simple process to test communication to the timer process
+	(but not from it) and the expiration/ordering of timers.  Not needed for the
+	main project, but can be built by running `make timer-test`.
