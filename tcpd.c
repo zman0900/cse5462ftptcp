@@ -32,7 +32,7 @@ static const int clientAckLen = CLIENT_ACK_MSG_LEN;
 static const void *clientStart = CLIENT_START_MSG;
 static const int clientStartLen = CLIENT_START_MSG_LEN;
 static const int clock_g = 20000; // Clock granularity (microsec)
-static const int minrto = 1000000; // Minimum RTO on 1 sec (rfc2988)
+static const int minrto = 000000; // (disabled)Minimum RTO of 1 sec (rfc2988)
 
 // Globals
 int isSenderSide;
@@ -458,7 +458,7 @@ void updateRTO(uint32_t rtt) {
 	}
 	rto = srtt + MAX(clock_g, 4*rttvar);
 	rto = MAX(rto, minrto);
-	printf("tcpd: New RTO: %d\n", rto);
+	printf("tcpd: New RTO: %d (srtt:%f rttvar:%f)\n", rto, srtt, rttvar);
 }
 
 void storeInRecvBuffer(void *buf, int len, uint32_t seqnum, uint32_t tsval) {
